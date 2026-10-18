@@ -4,7 +4,7 @@ Status: draft 0, revision 2 (2026-10-18), after an adversarial review. Not yet s
 
 ## 1. Purpose
 
-Platforms block agents for seven reasons: they can't identify the agent, can't prove who authorised it, see shared passwords, lose the customer, get scraped for free, get overloaded, and face unclear law. An analysis of 29 incidents (`../../kaze-analysis/access.md`) found that existing standards already cover identity, payment and receipts. Two pieces are missing:
+Platforms block agents for seven reasons: they can't identify the agent, can't prove who authorised it, see shared passwords, lose the customer, get scraped for free, get overloaded, and face unclear law. An analysis of 29 publicly reported incidents (October 2026) found that existing standards already cover identity, payment and receipts. Two pieces are missing:
 
 1. A way for a platform to state **its own terms** for an agent action: which proofs it requires, what liability floor, what price, what quota, which sanctioned path, and who runs checkout. That is the **Offer** (§4).
 2. A way for a principal's mandate to cover **any action, not just payments**, and to name **who is accountable** when the agent gets it wrong. Those are the **`act` and `liab` claims** (§5).
