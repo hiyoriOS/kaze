@@ -24,7 +24,9 @@ jobs:
       - run: cargo test --all-features
       - run: cargo test --release --all-features --test alloc --test props
       - name: vectors are reproducible
-        run: cargo run -q --example vectors --features issue | cmp - vectors/v1.json
+        run: |
+          cargo run -q --example vectors --features issue | cmp - vectors/v1.json
+          cargo run -q --example agent --features issue | cmp - vectors/agent.json
 
   msrv:
     runs-on: ubuntu-latest
@@ -48,10 +50,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-unknown-unknown }
-      - run: cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown
+      - run: cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
       - name: no imports, vectors agree, fuel deterministic, memory flat
         working-directory: harness
-        run: cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors/v1.json
+        run: cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors
 
   fuzz:
     runs-on: ubuntu-latest
@@ -61,6 +63,7 @@ jobs:
       - run: cargo install --locked cargo-fuzz
       - run: cargo fuzz run verify fuzz/corpus/verify -- -max_total_time=60
       - run: cargo fuzz run abi fuzz/corpus/abi -- -max_total_time=60
+      - run: cargo fuzz run agent fuzz/corpus/agent -- -max_total_time=60
 
   deny:
     runs-on: ubuntu-latest

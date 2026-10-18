@@ -128,3 +128,62 @@ proptest! {
         let _ = kzp::abi::verify_offer_json(s.as_bytes());
     }
 }
+
+mod agent {
+    //! Integrity of Web Bot Auth: any change to a signed header or a covered
+    //! component of a valid request is rejected.
+
+    use kzp::{verify_agent, Jwk, Message};
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    fn ok_case() -> (Message, Vec<Jwk>, String, i64) {
+        let file: Value = serde_json::from_str(include_str!("../vectors/agent.json")).unwrap();
+        let c = file["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "ok_agent")
+            .unwrap()
+            .clone();
+        (
+            serde_json::from_value(c["message"].clone()).unwrap(),
+            serde_json::from_value(c["directory"].clone()).unwrap(),
+            c["directory_url"].as_str().unwrap().to_owned(),
+            c["now"].as_i64().unwrap(),
+        )
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 4096, ..ProptestConfig::default() })]
+
+        #[test]
+        fn any_change_to_a_signed_request_is_rejected(field in 0usize..6, at in any::<usize>(), byte in any::<u8>()) {
+            let (mut m, d, u, now) = ok_case();
+            prop_assume!(verify_agent(&m, &d, &u, now).is_ok());
+            let target: &mut String = match field {
+                0 => &mut m.method,
+                1 => &mut m.authority,
+                2 => &mut m.path,
+                f => &mut m.headers[f - 3 + 1].1, // Signature-Agent, Signature-Input, Signature
+            };
+            let mut b = target.as_bytes().to_vec();
+            let i = at % b.len();
+            prop_assume!(b[i] != byte);
+            b[i] = byte;
+            let Ok(changed) = String::from_utf8(b) else { return Ok(()) };
+            // Changing only the letter case of @authority is a no-op by design.
+            prop_assume!(!(field == 1 && changed.eq_ignore_ascii_case(target)));
+            *target = changed;
+            prop_assert!(verify_agent(&m, &d, &u, now).is_err());
+        }
+
+        #[test]
+        fn arbitrary_headers_never_panic(a in ".{0,200}", b in ".{0,200}", c in ".{0,200}") {
+            let (mut m, d, u, now) = ok_case();
+            m.headers = vec![("Signature-Agent".into(), a), ("Signature-Input".into(), b), ("Signature".into(), c)];
+            let _ = verify_agent(&m, &d, &u, now);
+            let _ = kzp::signature_agent(&m);
+        }
+    }
+}

@@ -1,6 +1,6 @@
 # Kaze: admission terms and accountable mandates for agents
 
-Status: draft 0, revision 2 (2026-10-18), after an adversarial review. Not yet submitted anywhere.
+Status: draft 0, revision 3 (2026-10-18): adds how a verifier establishes the operator (§7.0). Not yet submitted anywhere.
 
 ## 1. Purpose
 
@@ -175,6 +175,34 @@ Kaze carries the claim but does not define recourse itself, such as how a claim 
 
 ## 7. Verification
 
+### 7.0 The operator (Web Bot Auth)
+
+The operator identity that steps 10, 19 and 21 compare against comes from the request's Web Bot Auth signature (`draft-ietf-webbotauth-httpsig-protocol`, built on RFC 9421). A verifier:
+
+1. finds the request's single signature whose `tag` is `web-bot-auth` and takes the agent URL that `Signature-Agent` names for its label. The dictionary form is preferred; the legacy bare-string form is accepted.
+2. fetches the key directory at `<origin of that URL>/.well-known/http-message-signatures-directory` over HTTPS, without following redirects;
+3. checks:
+   - the signature covers `@authority` or `@target-uri`, plus its own `signature-agent` member (`;key="<label>"`);
+   - `created` and `expires` are present, `created ≤ now + skew`, `expires > now`, and the lifetime is at most 24 hours;
+   - `alg`, if present, is `ed25519`;
+   - `keyid` is the RFC 8037 JWK thumbprint of a key in that directory;
+   - the RFC 9421 signature over the rebuilt signature base verifies.
+
+The operator is the origin of the agent URL. Components a verifier cannot rebuild fail closed. Replay protection with `nonce` is the caller's job.
+
+| Check | Code |
+|---|---|
+| Missing or malformed headers; not exactly one `web-bot-auth` signature; `created`, `expires` or `keyid` missing | `agent_header` |
+| Required components not covered, or an unsupported component | `agent_components` |
+| Not yet valid, expired, or valid for more than 24 hours | `agent_expired` |
+| `alg` other than `ed25519` | `alg` |
+| Agent URL not https, directory not that URL's, or `keyid` not in it | `agent_key` |
+| Signature does not verify | `agent_signature` |
+
+Agent vectors are in `vectors/agent.json`.
+
+### 7.1 The mandate
+
 The inputs are:
 - the Offer token, the platform's JWKS, and the expected platform origin
 - the presentation
@@ -218,7 +246,7 @@ The caller then:
 
 These steps need state, so they are deliberately outside the stateless verifier.
 
-### 7.1 The reference verifier's API
+### 7.2 The reference verifier's API
 
 The reference verifier makes step 1 a separate call, `verify_offer(token, jwks, iss, now)`. Its result is the only value accepted as `Context.offer`, so an unchecked or agent-supplied Offer can never reach steps 2–21.
 

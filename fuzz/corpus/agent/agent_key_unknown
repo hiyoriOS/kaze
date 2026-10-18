@@ -1,0 +1,3 @@
+sig="https://agent.example"
+sig=("@method" "@authority" "@path" "signature-agent";key="sig");created=1792299990;expires=1792303600;keyid="FxVhuO_Ir82yjJ8FMIoWpXpN_BZn-l_LcBqPspZfzfk";alg="ed25519";nonce="bm9uY2Uta3pw";tag="web-bot-auth"
+sig=:KnftHR7aLoxalOTQrk145YzuwiGGkzhlXtumNNpV0TC6gD922qHIEgl+JX5P+IRcqAYZ7qN0DwyUCPDvr/jnDw==:

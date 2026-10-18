@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 (2026-10-18)
+
+- **Web Bot Auth:** `verify_agent`, `signature_agent` and `agent::directory_url` establish the operator from RFC 9421 HTTP Message Signatures (`draft-ietf-webbotauth-httpsig-protocol`). New error codes: `agent_header`, `agent_components`, `agent_expired`, `agent_key`, `agent_signature`.
+- **Signing requests:** `issue::sign_request` signs a request the way an agent does.
+- **New WASM exports:** `kzp_signature_agent` and `kzp_verify_agent`. A build with `issue` also exports `kzp_jwk`, `kzp_issue_offer`, `kzp_issue_mandate`, `kzp_present` and `kzp_sign_request`, so a host can issue and sign without its own crypto.
+- **Canonical signatures:** a `Signature` must use canonical base64, so one signature has exactly one header text. Property tests caught this.
+- **Freed memory:** `kzp_free` zeroes every buffer, so seeds never outlive a call.
+- **Tests:** `vectors/agent.json` adds 20 cases. The signature base and Ed25519 output match RFC 9421 §B.2.6 byte for byte, and the key thumbprint matches RFC 8037 §A.3.
+- **Dependency:** `sfv` 0.14 for RFC 9651 structured fields.
+
 ## 0.1.0 (2026-10-18)
 
 First release, published as `kzp` (the name `kaze` is taken on crates.io).

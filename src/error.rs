@@ -90,6 +90,24 @@ pub enum Error {
     /// The attestation is expired or issued in the future.
     #[error("liability attestation expired")]
     LiabExpired,
+    /// A Web Bot Auth header is missing or malformed, there is not exactly one
+    /// `web-bot-auth` signature, or `created`, `expires` or `keyid` is missing.
+    #[error("missing or malformed Web Bot Auth headers")]
+    AgentHeader,
+    /// The signature does not cover `@authority` (or `@target-uri`) and its own
+    /// `signature-agent` member, or covers a component this verifier can't rebuild.
+    #[error("Web Bot Auth signature covers the wrong components")]
+    AgentComponents,
+    /// The signature is not yet valid, expired, or lives longer than 24 hours.
+    #[error("Web Bot Auth signature expired")]
+    AgentExpired,
+    /// The agent URL is not https, its directory is not the one supplied, or no
+    /// directory key has the signature's `keyid`.
+    #[error("Web Bot Auth key not found")]
+    AgentKey,
+    /// The Web Bot Auth signature does not verify.
+    #[error("Web Bot Auth signature does not verify")]
+    AgentSignature,
     /// The attested cover is below the term's floor or in another currency.
     #[error("liability cover is below the floor")]
     LiabCover,
@@ -129,6 +147,11 @@ impl Error {
             Error::LiabOperator => "liab_operator",
             Error::LiabExpired => "liab_expired",
             Error::LiabCover => "liab_cover",
+            Error::AgentHeader => "agent_header",
+            Error::AgentComponents => "agent_components",
+            Error::AgentExpired => "agent_expired",
+            Error::AgentKey => "agent_key",
+            Error::AgentSignature => "agent_signature",
         }
     }
 }

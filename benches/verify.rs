@@ -76,5 +76,22 @@ fn bench(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench);
+fn agent(c: &mut Criterion) {
+    let file: Value = serde_json::from_str(include_str!("../vectors/agent.json")).unwrap();
+    let k = file["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "ok_agent")
+        .unwrap();
+    let m: kzp::Message = serde_json::from_value(k["message"].clone()).unwrap();
+    let d: Vec<Jwk> = serde_json::from_value(k["directory"].clone()).unwrap();
+    let u = k["directory_url"].as_str().unwrap();
+    let now = k["now"].as_i64().unwrap();
+    c.bench_function("verify_agent", |b| {
+        b.iter(|| kzp::verify_agent(black_box(&m), &d, u, now))
+    });
+}
+
+criterion_group!(benches, bench, agent);
 criterion_main!(benches);

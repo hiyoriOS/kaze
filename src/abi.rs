@@ -5,17 +5,24 @@
 //! host is:
 //!
 //! 1. `ptr = kzp_alloc(len)`, then copy the request JSON into `[ptr, ptr + len)`.
-//! 2. `kzp_verify(ptr, len, ret)` (or `kzp_verify_offer`), where `ret` points to two
+//! 2. `kzp_<op>(ptr, len, ret)`, where `ret` points to two
 //!    writable `usize`s (8 bytes on wasm32). `ptr` is left untouched.
 //! 3. The response is `ret[1]` bytes at `ret[0]`.
 //! 4. `kzp_free(ptr, len)` and `kzp_free(ret[0], ret[1])`. Each pointer is freed
 //!    exactly once, with the length it came with.
 //!
 //! The response is `{"ok": ...}` or `{"error": {"code": ..., "message": ...}}`.
+//!
+//! Verification exports: `kzp_verify_offer`, `kzp_verify`, `kzp_signature_agent` and
+//! `kzp_verify_agent`. A build with the `issue` feature also exports `kzp_jwk`,
+//! `kzp_issue_offer`, `kzp_issue_mandate`, `kzp_present` and `kzp_sign_request`. These
+//! take a 32-byte Ed25519 seed (base64url) from the host, which owns key storage and
+//! randomness. `kzp_free` zeroes every buffer before releasing it, so a seed never
+//! outlives its call in linear memory.
 
 use serde::{Deserialize, Serialize};
 
-use crate::{json, verify, verify_offer, Context, Error, Jwk, Trust};
+use crate::{json, verify, verify_offer, Context, Error, Jwk, Message, Trust};
 
 /// Requests larger than this are refused before parsing.
 pub const MAX_INPUT: usize = 256 * 1024;
@@ -91,6 +98,167 @@ pub fn verify_json(input: &[u8]) -> Vec<u8> {
     }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentRequest {
+    message: Message,
+    #[serde(default)]
+    directory: Vec<Jwk>,
+    #[serde(default)]
+    directory_url: String,
+    #[serde(default)]
+    now: i64,
+}
+
+/// `{"message"}` to `{"ok": {"url", "directory_url"}}`: which directory to fetch.
+#[must_use]
+pub fn signature_agent_json(input: &[u8]) -> Vec<u8> {
+    respond(request::<AgentRequest>(input).and_then(|r| {
+        let url = crate::signature_agent(&r.message)?;
+        let directory_url = crate::agent::directory_url(&url)?;
+        Ok(serde_json::json!({ "url": url, "directory_url": directory_url }))
+    }))
+}
+
+/// `{"message","directory","directory_url","now"}` to `{"ok": Agent}`.
+#[must_use]
+pub fn verify_agent_json(input: &[u8]) -> Vec<u8> {
+    respond(
+        request::<AgentRequest>(input)
+            .and_then(|r| crate::verify_agent(&r.message, &r.directory, &r.directory_url, r.now)),
+    )
+}
+
+#[cfg(feature = "issue")]
+mod issuing {
+    //! Issuance entry points (feature `issue`).
+
+    use ed25519_dalek::SigningKey;
+    use serde::Deserialize;
+    use serde_json::{Map, Value};
+
+    use super::{request, respond};
+    use crate::{issue, jws, Binding, Error, Jwk, Message, Offer};
+
+    fn key(seed: &str) -> Result<SigningKey, Error> {
+        let bytes: [u8; 32] = jws::unb64(seed)?
+            .try_into()
+            .map_err(|_| Error::Malformed("seed"))?;
+        Ok(SigningKey::from_bytes(&bytes))
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct JwkIn {
+        seed: String,
+        kid: String,
+    }
+
+    /// `{"seed","kid"}` to `{"ok": Jwk}`: the public key to publish.
+    #[must_use]
+    pub fn jwk_json(input: &[u8]) -> Vec<u8> {
+        respond(
+            request::<JwkIn>(input)
+                .and_then(|r| Ok(Jwk::new(&key(&r.seed)?.verifying_key(), Some(&r.kid)))),
+        )
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct OfferIn {
+        offer: Offer,
+        kid: String,
+        seed: String,
+    }
+
+    /// `{"offer","kid","seed"}` to `{"ok": "<offer JWS>"}`.
+    #[must_use]
+    pub fn issue_offer_json(input: &[u8]) -> Vec<u8> {
+        respond(
+            request::<OfferIn>(input)
+                .and_then(|r| Ok(issue::offer(&r.offer, &r.kid, &key(&r.seed)?))),
+        )
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct MandateIn {
+        claims: Map<String, Value>,
+        /// `[salt, name, value]` triples; salts come from the host's randomness.
+        disclosures: Vec<(String, String, Value)>,
+        kid: String,
+        seed: String,
+    }
+
+    /// `{"claims","disclosures","kid","seed"}` to `{"ok": "<issuer-jwt>~<d>~..."}`,
+    /// the prefix an agent binds with `kzp_present`.
+    #[must_use]
+    pub fn issue_mandate_json(input: &[u8]) -> Vec<u8> {
+        respond(request::<MandateIn>(input).and_then(|r| {
+            let ds: Vec<String> = r
+                .disclosures
+                .iter()
+                .map(|(salt, name, value)| issue::disclosure(salt, name, value))
+                .collect();
+            let jwt = issue::mandate(Value::Object(r.claims), &ds, &r.kid, &key(&r.seed)?);
+            Ok(issue::prefix(&jwt, &ds))
+        }))
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PresentIn {
+        prefix: String,
+        binding: Binding,
+        seed: String,
+    }
+
+    /// `{"prefix","binding","seed"}` to `{"ok": "<presentation>"}` (fills `sd_hash`).
+    #[must_use]
+    pub fn present_json(input: &[u8]) -> Vec<u8> {
+        respond(
+            request::<PresentIn>(input)
+                .and_then(|r| Ok(issue::present(&r.prefix, r.binding, &key(&r.seed)?))),
+        )
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SignIn {
+        message: Message,
+        label: String,
+        agent_url: String,
+        created: i64,
+        expires: i64,
+        #[serde(default)]
+        nonce: Option<String>,
+        seed: String,
+    }
+
+    /// `{"message","label","agent_url","created","expires","nonce","seed"}` to
+    /// `{"ok": Message}` with the three Web Bot Auth headers added.
+    #[must_use]
+    pub fn sign_request_json(input: &[u8]) -> Vec<u8> {
+        respond(request::<SignIn>(input).and_then(|mut r| {
+            issue::sign_request(
+                &mut r.message,
+                &r.label,
+                &r.agent_url,
+                r.created,
+                r.expires,
+                r.nonce.as_deref(),
+                &key(&r.seed)?,
+            )?;
+            Ok(r.message)
+        }))
+    }
+}
+
+#[cfg(feature = "issue")]
+pub use issuing::{
+    issue_mandate_json, issue_offer_json, jwk_json, present_json, sign_request_json,
+};
+
 #[cfg(any(target_arch = "wasm32", test))]
 #[allow(unsafe_code, unreachable_pub)] // exported to the host, not to Rust
 mod exports {
@@ -119,7 +287,13 @@ mod exports {
         if !ptr.is_null() {
             // SAFETY: the caller guarantees `ptr`/`len` describe a live boxed slice we
             // handed out, so rebuilding and dropping the box frees it exactly once.
-            drop(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, len)) });
+            let mut buf = unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(ptr, len)) };
+            // Requests may carry key seeds: never leave them in freed memory.
+            for b in &mut *buf {
+                // SAFETY: `b` is a valid, aligned `&mut u8` into the live buffer.
+                unsafe { ptr::write_volatile(b, 0) };
+            }
+            drop(buf);
         }
     }
 
@@ -155,26 +329,35 @@ mod exports {
         }
     }
 
-    /// Verifies an offer; see the module docs.
-    ///
-    /// # Safety
-    ///
-    /// `ptr` must point to `len` readable bytes and `ret` to two writable `usize`s.
-    #[no_mangle]
-    pub unsafe extern "C" fn kzp_verify_offer(ptr: *const u8, len: usize, ret: *mut usize) {
-        // SAFETY: forwarded from the caller.
-        unsafe { output(super::verify_offer_json(input(ptr, len)), ret) }
+    macro_rules! export {
+        ($($name:ident => $f:path),* $(,)?) => {$(
+            /// See the module docs for the calling protocol.
+            ///
+            /// # Safety
+            ///
+            /// `ptr` must point to `len` readable bytes and `ret` to two writable `usize`s.
+            #[no_mangle]
+            pub unsafe extern "C" fn $name(ptr: *const u8, len: usize, ret: *mut usize) {
+                // SAFETY: forwarded from the caller.
+                unsafe { output($f(input(ptr, len)), ret) }
+            }
+        )*};
     }
 
-    /// Verifies a presentation; see the module docs.
-    ///
-    /// # Safety
-    ///
-    /// `ptr` must point to `len` readable bytes and `ret` to two writable `usize`s.
-    #[no_mangle]
-    pub unsafe extern "C" fn kzp_verify(ptr: *const u8, len: usize, ret: *mut usize) {
-        // SAFETY: forwarded from the caller.
-        unsafe { output(super::verify_json(input(ptr, len)), ret) }
+    export! {
+        kzp_verify_offer => super::verify_offer_json,
+        kzp_verify => super::verify_json,
+        kzp_signature_agent => super::signature_agent_json,
+        kzp_verify_agent => super::verify_agent_json,
+    }
+
+    #[cfg(feature = "issue")]
+    export! {
+        kzp_jwk => super::jwk_json,
+        kzp_issue_offer => super::issue_offer_json,
+        kzp_issue_mandate => super::issue_mandate_json,
+        kzp_present => super::present_json,
+        kzp_sign_request => super::sign_request_json,
     }
 
     #[cfg(test)]

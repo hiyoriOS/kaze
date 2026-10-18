@@ -1,6 +1,6 @@
 [package]
 name = "kzp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.84"
 description = "Kaze protocol: platform-signed admission terms and accountable mandates for AI agents"
@@ -26,6 +26,7 @@ base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sfv = "0.14.0"
 sha2 = { version = "0.10", default-features = false }
 thiserror = "2"
 
@@ -35,6 +36,10 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 
 [[example]]
 name = "vectors"
+required-features = ["issue"]
+
+[[example]]
+name = "agent"
 required-features = ["issue"]
 
 [[bench]]

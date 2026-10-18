@@ -1,23 +1,29 @@
-//! Runs every conformance vector through kzp.wasm exactly as a host would, then:
+//! Runs kzp.wasm exactly as a host would, in a pure-Rust interpreter:
 //! - checks the module imports nothing (pure function, no WASI, no host calls);
+//! - runs every conformance and Web Bot Auth vector through the ABI;
+//! - drives a full issue → present → verify round trip through the issuance exports;
 //! - reports deterministic fuel (≈ executed instructions) per vector;
-//! - runs a long alloc/verify/free loop and asserts linear memory stops growing.
+//! - runs a long loop over every export and asserts linear memory stops growing.
 //!
-//!     cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown   (in ../)
-//!     cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors/v1.json
+//!     cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
+//!     cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors
+
+use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 use wasmi::{Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-struct Kaze {
+type Export = TypedFunc<(i32, i32, i32), ()>;
+
+struct Kzp {
     store: Store<()>,
     memory: Memory,
     alloc: TypedFunc<i32, i32>,
     free: TypedFunc<(i32, i32), ()>,
-    verify: TypedFunc<(i32, i32, i32), ()>,
+    exports: BTreeMap<String, Export>,
 }
 
-impl Kaze {
+impl Kzp {
     fn new(bytes: &[u8]) -> Self {
         let mut config = Config::default();
         config.consume_fuel(true);
@@ -25,30 +31,43 @@ impl Kaze {
         let module = Module::new(&engine, bytes).expect("valid module");
         let imports: Vec<_> = module.imports().map(|i| format!("{}::{}", i.module(), i.name())).collect();
         assert!(imports.is_empty(), "kzp.wasm must import nothing, found {imports:?}");
+        let names: Vec<String> = module
+            .exports()
+            .map(|e| e.name().to_owned())
+            .filter(|n| n.starts_with("kzp_") && n != "kzp_alloc" && n != "kzp_free")
+            .collect();
         let mut store = Store::new(&engine, ());
         store.set_fuel(u64::MAX).unwrap();
         let instance: Instance = Linker::<()>::new(&engine)
             .instantiate_and_start(&mut store, &module)
             .expect("instantiate");
         let memory = instance.get_memory(&store, "memory").expect("memory export");
-        Kaze {
+        let exports = names
+            .into_iter()
+            .map(|n| {
+                let f = instance.get_typed_func(&store, &n).unwrap();
+                (n, f)
+            })
+            .collect();
+        Kzp {
             alloc: instance.get_typed_func(&store, "kzp_alloc").unwrap(),
             free: instance.get_typed_func(&store, "kzp_free").unwrap(),
-            verify: instance.get_typed_func(&store, "kzp_verify").unwrap(),
             store,
             memory,
+            exports,
         }
     }
 
-    /// One host call: alloc request and ret, verify, read response, free all three.
-    /// Returns (response JSON, fuel consumed).
-    fn call(&mut self, req: &[u8]) -> (Value, u64) {
+    /// One host call: alloc request and ret, call, read response, free all three.
+    fn call(&mut self, export: &str, req: &Value) -> (Value, u64) {
+        let req = serde_json::to_vec(req).unwrap();
+        let f = self.exports.get(export).unwrap_or_else(|| panic!("no export {export}")).clone();
         let before = self.store.get_fuel().unwrap();
         let len = i32::try_from(req.len()).unwrap();
         let p = self.alloc.call(&mut self.store, len).unwrap();
         let ret = self.alloc.call(&mut self.store, 8).unwrap();
-        self.memory.write(&mut self.store, p as usize, req).unwrap();
-        self.verify.call(&mut self.store, (p, len, ret)).unwrap();
+        self.memory.write(&mut self.store, p as usize, &req).unwrap();
+        f.call(&mut self.store, (p, len, ret)).unwrap();
         let mut words = [0u8; 8];
         self.memory.read(&self.store, ret as usize, &mut words).unwrap();
         let out = u32::from_le_bytes(words[..4].try_into().unwrap());
@@ -56,10 +75,34 @@ impl Kaze {
         let mut body = vec![0u8; out_len as usize];
         self.memory.read(&self.store, out as usize, &mut body).unwrap();
         self.free.call(&mut self.store, (p, len)).unwrap();
+        // kzp_free must have zeroed the request (it may hold a seed). The allocator then
+        // writes its own free-list words into the block, so check that no 8-byte run of
+        // the original request survives rather than that every byte is zero.
+        let mut freed = vec![0u8; req.len()];
+        self.memory.read(&self.store, p as usize, &mut freed).unwrap();
+        let survives = req.windows(8).zip(freed.windows(8)).any(|(a, b)| a == b && a.iter().any(|x| *x != 0));
+        assert!(!survives, "request bytes survived kzp_free");
         self.free.call(&mut self.store, (ret, 8)).unwrap();
         self.free.call(&mut self.store, (out as i32, out_len as i32)).unwrap();
         let fuel = before - self.store.get_fuel().unwrap();
         (serde_json::from_slice(&body).expect("response is JSON"), fuel)
+    }
+
+    /// Steady-state fuel: the first call pays allocator growth; later ones must agree.
+    /// The verification exports agree exactly. The Web Bot Auth ones parse structured
+    /// fields into sfv's hash-seeded dictionaries, so their cost may move by a few
+    /// instructions in ten thousand (never their result); they must agree within 0.1%.
+    fn steady(&mut self, export: &str, req: &Value) -> (Value, u64) {
+        let (got, _) = self.call(export, req);
+        let (again, a) = self.call(export, req);
+        let (_, b) = self.call(export, req);
+        assert_eq!(got, again, "{export}: result must be deterministic");
+        if export.contains("agent") {
+            assert!(a.abs_diff(b) * 1000 <= a, "{export}: fuel {a} vs {b}");
+        } else {
+            assert_eq!(a, b, "{export}: fuel must be deterministic");
+        }
+        (got, a)
     }
 
     fn pages(&self) -> u64 {
@@ -67,58 +110,127 @@ impl Kaze {
     }
 }
 
+fn ok(v: &Value) -> &Value {
+    v.get("ok").unwrap_or_else(|| panic!("expected ok, got {v}"))
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let wasm = std::fs::read(&args[1]).expect("kzp.wasm");
-    let file: Value = serde_json::from_str(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
-    let mut k = Kaze::new(&wasm);
+    let mut k = Kzp::new(&std::fs::read(&args[1]).expect("kzp.wasm"));
+    let dir = std::path::Path::new(&args[2]);
+    let load = |f: &str| -> Value { serde_json::from_str(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap() };
+    let v1 = load("v1.json");
+    let agent = load("agent.json");
 
     let mut failed = Vec::new();
-    let mut rows = Vec::new();
-    let mut reqs = Vec::new();
-    for c in file["cases"].as_array().unwrap() {
+    let mut loop_calls: Vec<(String, Value)> = Vec::new();
+
+    // Conformance vectors.
+    for c in v1["cases"].as_array().unwrap() {
         let Some(p) = c.get("presentation") else { continue };
-        let req = serde_json::to_vec(&json!({
-            "offer": c["offer"], "jwks": file["platform_jwks"], "iss": file["platform"], "now": c["now"],
-            "operator": c["operator"], "presentation": p, "trust": file["trust"],
-        }))
-        .unwrap();
-        // The first call pays one-time allocator growth; steady state must be exact.
-        let (got, _) = k.call(&req);
-        let (_, fuel) = k.call(&req);
-        let (_, again) = k.call(&req);
-        assert_eq!(fuel, again, "{}: fuel must be deterministic", c["name"]);
-        let name = c["name"].as_str().unwrap();
-        let want = &c["expect"];
-        let ok = match (got.get("ok"), want.get("ok"), want.get("error")) {
+        let req = json!({"offer": c["offer"], "jwks": v1["platform_jwks"], "iss": v1["platform"], "now": c["now"],
+                         "operator": c["operator"], "presentation": p, "trust": v1["trust"]});
+        let (got, fuel) = k.steady("kzp_verify", &req);
+        let w = &c["expect"];
+        let good = match (got.get("ok"), w.get("ok"), w.get("error")) {
             (Some(g), Some(w), _) => g["act"] == w["act"] && g["amount"] == w["amount"] && g["jti"] == w["jti"],
             (None, _, Some(code)) => got["error"]["code"] == *code,
             _ => false,
         };
-        if !ok {
-            failed.push(format!("{name}: {got}"));
+        if !good {
+            failed.push(format!("{}: {got}", c["name"]));
         }
-        rows.push((name.to_owned(), fuel));
-        reqs.push(req);
+        println!("{:28} fuel {fuel:>10}", c["name"].as_str().unwrap());
+        loop_calls.push(("kzp_verify".into(), req));
     }
-    for (name, fuel) in &rows {
-        println!("{name:24} fuel {fuel:>10}");
+
+    // Web Bot Auth vectors.
+    for c in agent["cases"].as_array().unwrap() {
+        let req = json!({"message": c["message"], "directory": c["directory"],
+                         "directory_url": c["directory_url"], "now": c["now"]});
+        let (got, fuel) = k.steady("kzp_verify_agent", &req);
+        let w = &c["expect"];
+        let good = match (got.get("ok"), w.get("ok"), w.get("error")) {
+            (Some(g), Some(w), _) => g["operator"] == w["operator"],
+            (None, _, Some(code)) => got["error"]["code"] == *code,
+            _ => false,
+        };
+        if !good {
+            failed.push(format!("{}: {got}", c["name"]));
+        }
+        println!("{:28} fuel {fuel:>10}", c["name"].as_str().unwrap());
+        loop_calls.push(("kzp_verify_agent".into(), req));
     }
     assert!(failed.is_empty(), "wasm disagrees with vectors: {failed:#?}");
-    println!("{} presentation vectors agree with the native verifier's expectations", rows.len());
+
+    // Full round trip through the issuance exports: what a platform and an agent do.
+    let seed = |n: u8| base64_url(&[n; 32]);
+    let now = 1_792_300_000_i64;
+    let shop = "https://api.ryo.example";
+    let op = "https://agent.example";
+    let platform_jwk = ok(&k.call("kzp_jwk", &json!({"seed": seed(11), "kid": "p1"})).0).clone();
+    let issuer_jwk = ok(&k.call("kzp_jwk", &json!({"seed": seed(12), "kid": "i1"})).0).clone();
+    let agent_jwk = ok(&k.call("kzp_jwk", &json!({"seed": seed(13), "kid": "a1"})).0).clone();
+    let offer = json!({"iss": shop, "iat": now - 5, "exp": now + 200, "nonce": base64_url(&[9; 16]),
+        "resource": format!("{shop}/v1/agent/payments"),
+        "terms": [{"act": "order:create", "mandate": {"hp": false}, "amount": {"value": 1850, "currency": "USD"}}]});
+    let token = ok(&k.call("kzp_issue_offer", &json!({"offer": offer, "kid": "p1", "seed": seed(11)})).0).clone();
+    let mut agent_pub = agent_jwk.clone();
+    agent_pub.as_object_mut().unwrap().remove("kid");
+    let claims = json!({"iss": "https://ryo.example/authority", "sub": "auth_1", "iat": now - 60, "exp": now + 86_400,
+        "jti": "mdt_rt", "vct": "kaze.mandate.1", "cnf": {"jwk": agent_pub}});
+    let prefix = ok(&k.call("kzp_issue_mandate", &json!({"claims": claims, "kid": "i1", "seed": seed(12),
+        "disclosures": [["c2FsdC1yb3VuZHRyaXA", "act", [{"act": "order:*", "on": [shop], "max": {"value": 5000, "currency": "USD"}}]]]})).0).clone();
+    let binding = json!({"iat": now - 1, "aud": shop, "op": op, "nonce": base64_url(&[9; 16]), "sd_hash": "",
+        "act": "order:create", "amt": {"value": 1850, "currency": "USD"}});
+    let pres = ok(&k.call("kzp_present", &json!({"prefix": prefix, "binding": binding, "seed": seed(13)})).0).clone();
+    let verify = json!({"offer": token, "jwks": [platform_jwk], "iss": shop, "now": now, "operator": op,
+        "presentation": pres, "trust": {"issuers": {"https://ryo.example/authority": [issuer_jwk]}, "providers": {}}});
+    let (grant, _) = k.steady("kzp_verify", &verify);
+    assert_eq!(ok(&grant)["amount"]["value"], 1850, "round trip grant: {grant}");
+
+    let msg = json!({"method": "POST", "scheme": "https", "authority": "api.ryo.example", "path": "/v1/agent/payments", "headers": []});
+    let signed = ok(&k.call("kzp_sign_request", &json!({"message": msg, "label": "sig", "agent_url": op,
+        "created": now - 1, "expires": now + 600, "seed": seed(13)})).0).clone();
+    let (sa, _) = k.steady("kzp_signature_agent", &json!({"message": signed}));
+    let dir_url = ok(&sa)["directory_url"].clone();
+    let (who, _) = k.steady("kzp_verify_agent", &json!({"message": signed, "directory": [agent_jwk],
+        "directory_url": dir_url, "now": now}));
+    assert_eq!(ok(&who)["operator"], op, "round trip agent: {who}");
+    println!("round trip: issue offer + mandate, present, sign request, verify agent + grant: ok");
+    loop_calls.push(("kzp_verify".into(), verify));
+
+    let presentations = v1["cases"].as_array().unwrap().iter().filter(|c| c.get("presentation").is_some()).count();
+    println!(
+        "{} conformance + {} agent vectors agree with the native verifier",
+        presentations,
+        agent["cases"].as_array().unwrap().len()
+    );
 
     // Leak check at the WebAssembly level: after warm-up, linear memory must not grow.
-    for r in &reqs {
-        k.call(r);
+    for (e, r) in &loop_calls {
+        k.call(e, r);
     }
     let warm = k.pages();
-    let rounds = 2_000;
+    let rounds = 1_000;
     for _ in 0..rounds {
-        for r in &reqs {
-            k.call(r);
+        for (e, r) in &loop_calls {
+            k.call(e, r);
         }
     }
     let after = k.pages();
-    println!("memory: {warm} pages after warm-up, {after} after {} more calls", rounds * reqs.len());
+    println!("memory: {warm} pages after warm-up, {after} after {} more calls", rounds * loop_calls.len());
     assert_eq!(warm, after, "linear memory grew: leak in the ABI path");
+}
+
+fn base64_url(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |acc, (i, b)| acc | (u32::from(*b) << (16 - 8 * i)));
+        for i in 0..=chunk.len() {
+            out.push(A[((n >> (18 - 6 * i)) & 63) as usize] as char);
+        }
+    }
+    out
 }

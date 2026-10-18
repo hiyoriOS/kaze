@@ -146,3 +146,29 @@ fn allocation_budget() {
         worst.2
     );
 }
+
+#[test]
+fn agent_vectors_return_all_memory() {
+    let _g = SERIAL.lock().unwrap();
+    let file: Value = serde_json::from_str(include_str!("../vectors/agent.json")).unwrap();
+    for c in file["cases"].as_array().unwrap() {
+        let req = serde_json::to_vec(
+            &json!({"message": c["message"], "directory": c["directory"],
+            "directory_url": c["directory_url"], "now": c["now"]}),
+        )
+        .unwrap();
+        let _ = kzp::abi::verify_agent_json(&req);
+        for _ in 0..20 {
+            let base = LIVE.load(Relaxed);
+            drop(kzp::abi::verify_agent_json(&req));
+            let after = LIVE.load(Relaxed);
+            assert_eq!(
+                after,
+                base,
+                "{} leaked {} bytes",
+                c["name"],
+                after as isize - base as isize
+            );
+        }
+    }
+}

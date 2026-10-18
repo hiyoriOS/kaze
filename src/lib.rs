@@ -24,6 +24,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod abi;
+pub mod agent;
 mod error;
 #[cfg(feature = "issue")]
 pub mod issue;
@@ -33,6 +34,7 @@ pub mod mandate;
 pub mod offer;
 mod verify;
 
+pub use agent::{signature_agent, verify_agent, Agent, Message};
 pub use error::Error;
 pub use jws::Jwk;
 pub use mandate::{Act, Attestation, Binding, Liab, Mandate};
