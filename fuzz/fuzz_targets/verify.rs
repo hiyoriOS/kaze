@@ -4,7 +4,7 @@
 
 use std::sync::OnceLock;
 
-use kaze::{verify, verify_offer, Context, Jwk, Trust, Verified};
+use kzp::{verify, verify_offer, Context, Jwk, Trust, Verified};
 use libfuzzer_sys::fuzz_target;
 use serde_json::Value;
 

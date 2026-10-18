@@ -19,7 +19,7 @@
 
 //! Runs every case in `vectors/v1.json` through the verifier.
 
-use kaze::{verify, verify_offer, Context, Jwk, Money, Trust};
+use kzp::{verify, verify_offer, Context, Jwk, Money, Trust};
 use serde_json::Value;
 
 #[test]

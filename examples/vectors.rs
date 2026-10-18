@@ -24,9 +24,9 @@
 )]
 
 use ed25519_dalek::SigningKey;
-use kaze::issue;
-use kaze::offer::{Checkout, LiabNeed, MandateNeed, Quota};
-use kaze::{jws, Attestation, Binding, Jwk, Money, Offer, Term};
+use kzp::issue;
+use kzp::offer::{Checkout, LiabNeed, MandateNeed, Quota};
+use kzp::{jws, Attestation, Binding, Jwk, Money, Offer, Term};
 use serde_json::{json, Value};
 
 const NOW: i64 = 1_792_300_000; // 2026-10-18T05:06:40Z

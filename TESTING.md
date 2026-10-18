@@ -21,7 +21,7 @@ Every check below also runs in CI ([`.github/workflows/ci.yml`](.github/workflow
 
 ## WebAssembly harness
 
-`harness/` is a dev-only crate. It loads `kaze.wasm` in wasmi, a pure-Rust interpreter, and then:
+`harness/` is a dev-only crate. It loads `kzp.wasm` in wasmi, a pure-Rust interpreter, and then:
 
 1. checks the module has no imports;
 2. runs every vector through the ABI exactly as a host would;
@@ -29,8 +29,8 @@ Every check below also runs in CI ([`.github/workflows/ci.yml`](.github/workflow
 4. asserts linear memory stops growing after warm-up.
 
 ```bash
-cargo build --profile wasm --target wasm32-unknown-unknown --lib
-cd harness && cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kaze.wasm ../vectors/v1.json
+cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown
+cd harness && cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors/v1.json
 ```
 
 ## Performance
@@ -46,5 +46,5 @@ The deterministic numbers are budgets. The wall-clock times are only for orienta
 | ABI round trip (offer, presentation, JSON) | | | | 200 µs |
 
 - `tests/alloc.rs` fails if the worst case exceeds 400 allocations or 32 KB.
-- `kaze.wasm` is 308 KB raw and 107 KB gzipped at `opt-level = "s"`. `"z"` saves only 2.4% but costs 6% more fuel.
+- `kzp.wasm` is 308 KB raw and 107 KB gzipped at `opt-level = "s"`. `"z"` saves only 2.4% but costs 6% more fuel.
 - Wall-clock times come from `cargo bench`.

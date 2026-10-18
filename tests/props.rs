@@ -24,7 +24,7 @@
     clippy::indexing_slicing
 )]
 
-use kaze::{verify, verify_offer, Context, Jwk, Trust, Verified};
+use kzp::{verify, verify_offer, Context, Jwk, Trust, Verified};
 use proptest::prelude::*;
 use serde_json::Value;
 
@@ -124,7 +124,7 @@ proptest! {
     fn arbitrary_input_never_panics(s in ".{0,512}") {
         let f = fixture();
         let _ = check(&f, &s);
-        let _ = kaze::abi::verify_json(s.as_bytes());
-        let _ = kaze::abi::verify_offer_json(s.as_bytes());
+        let _ = kzp::abi::verify_json(s.as_bytes());
+        let _ = kzp::abi::verify_offer_json(s.as_bytes());
     }
 }

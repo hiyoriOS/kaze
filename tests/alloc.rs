@@ -85,7 +85,7 @@ fn measure(req: &[u8]) -> (usize, usize, isize) {
     let base = LIVE.load(Relaxed);
     ALLOCS.store(0, Relaxed);
     PEAK.store(base, Relaxed);
-    let out = kaze::abi::verify_json(req);
+    let out = kzp::abi::verify_json(req);
     drop(out);
     let after = LIVE.load(Relaxed);
     (
@@ -101,7 +101,7 @@ fn every_vector_returns_all_memory() {
     let reqs = requests();
     for (name, req) in &reqs {
         // Warm once so lazy statics (if any) are not counted as a leak.
-        let _ = kaze::abi::verify_json(req);
+        let _ = kzp::abi::verify_json(req);
         let first = measure(req);
         for _ in 0..50 {
             let again = measure(req);
@@ -121,7 +121,7 @@ fn allocation_budget() {
     let mut worst = (String::new(), 0, 0);
     let mut report = Vec::new();
     for (name, req) in requests() {
-        let _ = kaze::abi::verify_json(&req);
+        let _ = kzp::abi::verify_json(&req);
         let (allocs, peak, _) = measure(&req);
         report.push(format!("{name:24} allocs {allocs:4}  peak {peak:6} B"));
         if allocs > worst.1 {

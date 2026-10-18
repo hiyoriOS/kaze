@@ -1,4 +1,4 @@
-# Dev-only: runs kaze.wasm in a pure-Rust WebAssembly interpreter to check the ABI,
+# Dev-only: runs kzp.wasm in a pure-Rust WebAssembly interpreter to check the ABI,
 # memory growth and deterministic instruction cost. Not part of the published crate.
 [package]
 name = "harness"

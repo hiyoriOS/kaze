@@ -22,7 +22,7 @@
 )]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use kaze::{verify, verify_offer, Context, Jwk, Trust};
+use kzp::{verify, verify_offer, Context, Jwk, Trust};
 use serde_json::{json, Value};
 
 fn load() -> Value {
@@ -72,7 +72,7 @@ fn bench(c: &mut Criterion) {
     }))
     .unwrap();
     c.bench_function("abi/verify_json", |b| {
-        b.iter(|| kaze::abi::verify_json(black_box(&req)))
+        b.iter(|| kzp::abi::verify_json(black_box(&req)))
     });
 }
 

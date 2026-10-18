@@ -8,20 +8,20 @@
 //! and payment settlement need state, so they stay with the caller (spec §7).
 //!
 //! ```no_run
-//! # fn main() -> Result<(), kaze::Error> {
-//! # let (token, jwks, presentation, trust) = ("", vec![], "", kaze::Trust::default());
+//! # fn main() -> Result<(), kzp::Error> {
+//! # let (token, jwks, presentation, trust) = ("", vec![], "", kzp::Trust::default());
 //! let now = 1_792_300_000;
-//! let offer = kaze::verify_offer(token, &jwks, "https://shop.example", now)?;
-//! let ctx = kaze::Context { now, operator: "https://agent.example", offer: &offer };
-//! let grant = kaze::verify(presentation, &ctx, &trust)?;
+//! let offer = kzp::verify_offer(token, &jwks, "https://shop.example", now)?;
+//! let ctx = kzp::Context { now, operator: "https://agent.example", offer: &offer };
+//! let grant = kzp::verify(presentation, &ctx, &trust)?;
 //! // record grant.nonce, apply quota to grant.jti, settle grant.price
 //! # Ok(()) }
 //! ```
 //!
-//! On `wasm32` the crate also exports a small C ABI (see [`abi`]), so one `kaze.wasm`
+//! On `wasm32` the crate also exports a small C ABI (see [`abi`]), so one `kzp.wasm`
 //! serves every host that can run WebAssembly.
 
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod abi;
 mod error;

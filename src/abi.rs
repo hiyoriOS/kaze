@@ -1,14 +1,14 @@
-//! JSON-in, JSON-out entry points for hosts that load `kaze.wasm`.
+//! JSON-in, JSON-out entry points for hosts that load `kzp.wasm`.
 //!
 //! The safe functions here are plain Rust and run on every target. The `extern "C"`
 //! exports exist only on `wasm32` (and in this crate's own tests). The protocol for a
 //! host is:
 //!
-//! 1. `ptr = kaze_alloc(len)`, then copy the request JSON into `[ptr, ptr + len)`.
-//! 2. `kaze_verify(ptr, len, ret)` (or `kaze_verify_offer`), where `ret` points to two
+//! 1. `ptr = kzp_alloc(len)`, then copy the request JSON into `[ptr, ptr + len)`.
+//! 2. `kzp_verify(ptr, len, ret)` (or `kzp_verify_offer`), where `ret` points to two
 //!    writable `usize`s (8 bytes on wasm32). `ptr` is left untouched.
 //! 3. The response is `ret[1]` bytes at `ret[0]`.
-//! 4. `kaze_free(ptr, len)` and `kaze_free(ret[0], ret[1])`. Each pointer is freed
+//! 4. `kzp_free(ptr, len)` and `kzp_free(ret[0], ret[1])`. Each pointer is freed
 //!    exactly once, with the length it came with.
 //!
 //! The response is `{"ok": ...}` or `{"error": {"code": ..., "message": ...}}`.
@@ -101,21 +101,21 @@ mod exports {
     /// Allocates `len` zeroed bytes for the host to write into. Returns null when
     /// `len` exceeds [`MAX_INPUT`](super::MAX_INPUT), so a hostile length can't trap.
     #[no_mangle]
-    pub extern "C" fn kaze_alloc(len: usize) -> *mut u8 {
+    pub extern "C" fn kzp_alloc(len: usize) -> *mut u8 {
         if len > super::MAX_INPUT {
             return ptr::null_mut();
         }
         Box::into_raw(vec![0u8; len].into_boxed_slice()).cast::<u8>()
     }
 
-    /// Frees a buffer from `kaze_alloc` or a response.
+    /// Frees a buffer from `kzp_alloc` or a response.
     ///
     /// # Safety
     ///
-    /// `ptr` must come from `kaze_alloc(len)`, or be a response pointer with its length,
+    /// `ptr` must come from `kzp_alloc(len)`, or be a response pointer with its length,
     /// and must not be freed twice. A null `ptr` is ignored.
     #[no_mangle]
-    pub unsafe extern "C" fn kaze_free(ptr: *mut u8, len: usize) {
+    pub unsafe extern "C" fn kzp_free(ptr: *mut u8, len: usize) {
         if !ptr.is_null() {
             // SAFETY: the caller guarantees `ptr`/`len` describe a live boxed slice we
             // handed out, so rebuilding and dropping the box frees it exactly once.
@@ -161,7 +161,7 @@ mod exports {
     ///
     /// `ptr` must point to `len` readable bytes and `ret` to two writable `usize`s.
     #[no_mangle]
-    pub unsafe extern "C" fn kaze_verify_offer(ptr: *const u8, len: usize, ret: *mut usize) {
+    pub unsafe extern "C" fn kzp_verify_offer(ptr: *const u8, len: usize, ret: *mut usize) {
         // SAFETY: forwarded from the caller.
         unsafe { output(super::verify_offer_json(input(ptr, len)), ret) }
     }
@@ -172,7 +172,7 @@ mod exports {
     ///
     /// `ptr` must point to `len` readable bytes and `ret` to two writable `usize`s.
     #[no_mangle]
-    pub unsafe extern "C" fn kaze_verify(ptr: *const u8, len: usize, ret: *mut usize) {
+    pub unsafe extern "C" fn kzp_verify(ptr: *const u8, len: usize, ret: *mut usize) {
         // SAFETY: forwarded from the caller.
         unsafe { output(super::verify_json(input(ptr, len)), ret) }
     }
@@ -183,23 +183,23 @@ mod exports {
         //! Drives the exports exactly as a host does. Under Miri these prove the
         //! boundary code has no leak, double free or out-of-bounds access.
 
-        use super::{kaze_alloc, kaze_free, kaze_verify, kaze_verify_offer};
+        use super::{kzp_alloc, kzp_free, kzp_verify, kzp_verify_offer};
 
         type Export = unsafe extern "C" fn(*const u8, usize, *mut usize);
 
         /// Returns the response bytes after freeing every buffer involved.
         pub(crate) fn call(f: Export, req: &[u8]) -> Vec<u8> {
-            let p = kaze_alloc(req.len());
+            let p = kzp_alloc(req.len());
             let mut ret = [0usize; 2];
             // SAFETY: `p` has `req.len()` writable bytes; `ret` holds two usizes; every
             // pointer is freed once with the length it came with.
             unsafe {
                 std::ptr::copy_nonoverlapping(req.as_ptr(), p, req.len());
                 f(p, req.len(), ret.as_mut_ptr());
-                kaze_free(p, req.len());
+                kzp_free(p, req.len());
                 let resp = std::ptr::with_exposed_provenance_mut::<u8>(ret[0]);
                 let out = std::slice::from_raw_parts(resp, ret[1]).to_vec();
-                kaze_free(resp, ret[1]);
+                kzp_free(resp, ret[1]);
                 out
             }
         }
@@ -207,28 +207,28 @@ mod exports {
         #[test]
         fn alloc_free_pairs() {
             for len in [0, 1, 7, 4096] {
-                let p = kaze_alloc(len);
+                let p = kzp_alloc(len);
                 assert!(!p.is_null());
                 // SAFETY: freeing what we allocated, once.
-                unsafe { kaze_free(p, len) };
+                unsafe { kzp_free(p, len) };
             }
             // SAFETY: null is documented as ignored.
-            unsafe { kaze_free(std::ptr::null_mut(), 0) };
-            assert!(kaze_alloc(usize::MAX).is_null());
-            assert!(kaze_alloc(super::super::MAX_INPUT + 1).is_null());
+            unsafe { kzp_free(std::ptr::null_mut(), 0) };
+            assert!(kzp_alloc(usize::MAX).is_null());
+            assert!(kzp_alloc(super::super::MAX_INPUT + 1).is_null());
         }
 
         #[test]
         fn responses_round_trip() {
-            assert!(call(kaze_verify_offer, b"{}").starts_with(br#"{"error":"#));
-            assert!(call(kaze_verify, b"not json").starts_with(br#"{"error":"#));
-            assert!(call(kaze_verify, b"").starts_with(br#"{"error":"#));
+            assert!(call(kzp_verify_offer, b"{}").starts_with(br#"{"error":"#));
+            assert!(call(kzp_verify, b"not json").starts_with(br#"{"error":"#));
+            assert!(call(kzp_verify, b"").starts_with(br#"{"error":"#));
         }
 
         #[test]
         fn null_ret_drops_the_response() {
             // SAFETY: null input with len 0 and null ret are both documented as fine.
-            unsafe { kaze_verify(std::ptr::null(), 0, std::ptr::null_mut()) };
+            unsafe { kzp_verify(std::ptr::null(), 0, std::ptr::null_mut()) };
         }
     }
 }

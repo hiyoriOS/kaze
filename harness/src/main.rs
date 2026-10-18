@@ -1,10 +1,10 @@
-//! Runs every conformance vector through kaze.wasm exactly as a host would, then:
+//! Runs every conformance vector through kzp.wasm exactly as a host would, then:
 //! - checks the module imports nothing (pure function, no WASI, no host calls);
 //! - reports deterministic fuel (≈ executed instructions) per vector;
 //! - runs a long alloc/verify/free loop and asserts linear memory stops growing.
 //!
-//!     cargo build --profile wasm --target wasm32-unknown-unknown --lib   (in ../)
-//!     cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kaze.wasm ../vectors/v1.json
+//!     cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown   (in ../)
+//!     cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors/v1.json
 
 use serde_json::{json, Value};
 use wasmi::{Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
@@ -24,7 +24,7 @@ impl Kaze {
         let engine = Engine::new(&config);
         let module = Module::new(&engine, bytes).expect("valid module");
         let imports: Vec<_> = module.imports().map(|i| format!("{}::{}", i.module(), i.name())).collect();
-        assert!(imports.is_empty(), "kaze.wasm must import nothing, found {imports:?}");
+        assert!(imports.is_empty(), "kzp.wasm must import nothing, found {imports:?}");
         let mut store = Store::new(&engine, ());
         store.set_fuel(u64::MAX).unwrap();
         let instance: Instance = Linker::<()>::new(&engine)
@@ -32,9 +32,9 @@ impl Kaze {
             .expect("instantiate");
         let memory = instance.get_memory(&store, "memory").expect("memory export");
         Kaze {
-            alloc: instance.get_typed_func(&store, "kaze_alloc").unwrap(),
-            free: instance.get_typed_func(&store, "kaze_free").unwrap(),
-            verify: instance.get_typed_func(&store, "kaze_verify").unwrap(),
+            alloc: instance.get_typed_func(&store, "kzp_alloc").unwrap(),
+            free: instance.get_typed_func(&store, "kzp_free").unwrap(),
+            verify: instance.get_typed_func(&store, "kzp_verify").unwrap(),
             store,
             memory,
         }
@@ -69,7 +69,7 @@ impl Kaze {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let wasm = std::fs::read(&args[1]).expect("kaze.wasm");
+    let wasm = std::fs::read(&args[1]).expect("kzp.wasm");
     let file: Value = serde_json::from_str(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
     let mut k = Kaze::new(&wasm);
 

@@ -1,20 +1,20 @@
 [package]
-name = "kaze"
+name = "kzp"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.84"
-description = "Verifier for Kaze offers and accountable agent mandates"
+description = "Kaze protocol: platform-signed admission terms and accountable mandates for AI agents"
 readme = "README.md"
 repository = "https://github.com/hiyoriOS/kaze"
 keywords = ["agents", "sd-jwt", "jws", "payments", "protocol"]
 categories = ["authentication", "cryptography", "wasm"]
-# License not chosen yet; nothing is published until it is.
-publish = false
-include = ["/src", "/README.md", "/CHANGELOG.md"]
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/kzp"
+include = ["/src", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
-[lib]
-# rlib for Rust users; cdylib is what the wasm32 build turns into kaze.wasm.
-crate-type = ["rlib", "cdylib"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
@@ -57,7 +57,7 @@ panic = "warn"
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 
-# `cargo build --profile wasm --target wasm32-unknown-unknown` produces kaze.wasm.
+# `cargo build --profile wasm --target wasm32-unknown-unknown` produces kzp.wasm.
 [profile.wasm]
 inherits = "release"
 opt-level = "s"
