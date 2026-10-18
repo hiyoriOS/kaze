@@ -1,0 +1,23 @@
+# Setup pipeline: diff the change against main (or HEAD~1 on main itself) and
+# continue with .circleci/continue.yml only when something buildable changed.
+# Requires "Enable dynamic config using setup workflows" in the project settings.
+version: 2.1
+setup: true
+
+orbs:
+  path-filtering: circleci/path-filtering@3.0.0
+
+workflows:
+  setup:
+    jobs:
+      - path-filtering/filter:
+          name: changes
+          base-revision: main
+          config-path: .circleci/continue.yml
+          # Prose and licenses never change what compiles.
+          exclude: |
+            .*\.md
+            LICENSE-.*
+            \.github/.*
+          mapping: |
+            .* code true
