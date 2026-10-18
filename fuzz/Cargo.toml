@@ -1,0 +1,30 @@
+# cargo-fuzz targets (nightly): `cargo +nightly fuzz run verify -- -max_total_time=60`
+[package]
+name = "kaze-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+kaze = { path = ".." }
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+[[bin]]
+name = "verify"
+path = "fuzz_targets/verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "abi"
+path = "fuzz_targets/abi.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -1,0 +1,23 @@
+# cargo-deny: advisories, licenses, duplicate versions, and allowed sources.
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC"]
+confidence-threshold = 0.9
+# kaze is publish = false until a license is chosen; check only its dependencies.
+private = { ignore = true }
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

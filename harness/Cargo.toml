@@ -1,0 +1,13 @@
+# Dev-only: runs kaze.wasm in a pure-Rust WebAssembly interpreter to check the ABI,
+# memory growth and deterministic instruction cost. Not part of the published crate.
+[package]
+name = "harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "1"
+wasmi = "2"
+
+[workspace]

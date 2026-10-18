@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaze.dev/schema/offer/0",
+  "title": "Kaze Offer payload (typ kaze-offer+jwt)",
+  "type": "object",
+  "required": [
+    "iss",
+    "iat",
+    "exp",
+    "nonce",
+    "resource",
+    "terms"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "format": "uri"
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "exp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22,}$"
+    },
+    "resource": {
+      "type": "string",
+      "format": "uri"
+    },
+    "terms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/term"
+      }
+    }
+  },
+  "$defs": {
+    "act": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_.-]+$"
+    },
+    "money": {
+      "type": "object",
+      "required": [
+        "value",
+        "currency"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "term": {
+      "type": "object",
+      "required": [
+        "act"
+      ],
+      "properties": {
+        "act": {
+          "$ref": "#/$defs/act"
+        },
+        "id": {
+          "enum": [
+            "signed"
+          ]
+        },
+        "mandate": {
+          "type": "object",
+          "properties": {
+            "hp": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "liab": {
+          "type": "object",
+          "required": [
+            "cover",
+            "providers"
+          ],
+          "properties": {
+            "cover": {
+              "$ref": "#/$defs/money"
+            },
+            "providers": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "quota": {
+          "type": "object",
+          "required": [
+            "window",
+            "max"
+          ],
+          "properties": {
+            "window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "path": {
+          "type": "string",
+          "format": "uri"
+        },
+        "checkout": {
+          "enum": [
+            "platform",
+            "agent"
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "price": {
+          "type": "object",
+          "description": "x402 PaymentRequirements or MPP challenge, verbatim"
+        }
+      },
+      "dependentRequired": {
+        "price": [
+          "amount"
+        ]
+      }
+    }
+  }
+}

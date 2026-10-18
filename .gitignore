@@ -1,0 +1,6 @@
+/target
+/harness/target
+/fuzz/target
+/fuzz/artifacts
+/fuzz/coverage
+Cargo.lock.bak

@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaze.dev/schema/mandate/0",
+  "title": "Kaze mandate claims after disclosure (typ kaze-mandate+sd-jwt), and its key binding",
+  "type": "object",
+  "required": [
+    "iss",
+    "sub",
+    "iat",
+    "exp",
+    "jti",
+    "vct",
+    "cnf",
+    "act"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "format": "uri"
+    },
+    "sub": {
+      "type": "string"
+    },
+    "iat": {
+      "type": "integer"
+    },
+    "exp": {
+      "type": "integer"
+    },
+    "jti": {
+      "type": "string"
+    },
+    "vct": {
+      "const": "kaze.mandate.1"
+    },
+    "cnf": {
+      "type": "object",
+      "required": [
+        "jwk"
+      ],
+      "properties": {
+        "jwk": {
+          "$ref": "#/$defs/okp"
+        }
+      }
+    },
+    "act": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/actEntry"
+      }
+    },
+    "liab": {
+      "type": "object",
+      "required": [
+        "op",
+        "att"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "format": "uri"
+        },
+        "att": {
+          "type": "string",
+          "description": "JWS Compact, typ kaze-liab+jwt, payload #/$defs/attestation"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "money": {
+      "$ref": "offer.schema.json#/$defs/money"
+    },
+    "okp": {
+      "type": "object",
+      "required": [
+        "kty",
+        "crv",
+        "x"
+      ],
+      "properties": {
+        "kty": {
+          "const": "OKP"
+        },
+        "crv": {
+          "const": "Ed25519"
+        },
+        "x": {
+          "type": "string"
+        },
+        "kid": {
+          "type": "string"
+        }
+      }
+    },
+    "actEntry": {
+      "type": "object",
+      "required": [
+        "act",
+        "on"
+      ],
+      "properties": {
+        "act": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:([a-z0-9_.-]+|\\*)$"
+        },
+        "on": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "max": {
+          "$ref": "#/$defs/money"
+        },
+        "hp": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "iss",
+        "sub",
+        "cover",
+        "iat",
+        "exp"
+      ],
+      "properties": {
+        "iss": {
+          "type": "string",
+          "format": "uri"
+        },
+        "sub": {
+          "type": "string",
+          "format": "uri"
+        },
+        "cover": {
+          "$ref": "#/$defs/money"
+        },
+        "iat": {
+          "type": "integer"
+        },
+        "exp": {
+          "type": "integer"
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "required": [
+        "iat",
+        "aud",
+        "op",
+        "nonce",
+        "sd_hash",
+        "act"
+      ],
+      "properties": {
+        "iat": {
+          "type": "integer"
+        },
+        "aud": {
+          "type": "string",
+          "format": "uri"
+        },
+        "op": {
+          "type": "string",
+          "format": "uri"
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "sd_hash": {
+          "type": "string"
+        },
+        "act": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_.-]+$"
+        },
+        "amt": {
+          "$ref": "#/$defs/money"
+        }
+      }
+    }
+  }
+}
