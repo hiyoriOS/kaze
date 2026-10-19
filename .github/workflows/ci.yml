@@ -6,10 +6,10 @@
 name: ci
 on:
   pull_request:
-    paths-ignore: ["**.md", "LICENSE-*"]
+    paths-ignore: ["**.md", "LICENSE"]
   push:
     branches: [main]
-    paths-ignore: ["**.md", "LICENSE-*"]
+    paths-ignore: ["**.md", "LICENSE"]
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
