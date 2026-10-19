@@ -1,72 +1,124 @@
 # Mirrors what was run locally on 2026-10-18; modeled on tokio's CI split.
+#
+# Runs on Blacksmith runners (billed by Blacksmith, not GitHub Actions
+# minutes). Uses only GitHub-owned actions: the org allows no others, so
+# toolchains and tools are installed from their upstream releases.
 name: ci
-on: [push, pull_request]
+on:
+  pull_request:
+    paths-ignore: ["**.md", "LICENSE-*"]
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE-*"]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# A new push to a PR cancels the run it replaces; main and scheduled runs finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # Pinned so a new stable's lints land in a deliberate bump, not a red PR.
+  RUST_STABLE: "1.99"
 
 jobs:
+  # fmt, clippy, rustdoc and cargo-deny: the cheap gate everything else waits for.
   check:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
+      - run: rustup toolchain install "$RUST_STABLE" --profile minimal -c rustfmt,clippy && rustup default "$RUST_STABLE"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: check-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: check-${{ env.RUST_STABLE }}-
       - run: cargo fmt --check
       - run: cargo clippy --all-features --all-targets
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
+      - name: cargo deny check
+        run: |
+          version=0.20.2
+          curl -fsSL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${version}/cargo-deny-${version}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp "cargo-deny-${version}-x86_64-unknown-linux-musl/cargo-deny"
+          /tmp/cargo-deny check
 
-  test:
-    runs-on: ubuntu-latest
+  msrv:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup toolchain install 1.84 --profile minimal && rustup default 1.84
+      - run: cargo check --lib --all-features
+
+  # Tests, reproducible vectors and the WebAssembly harness share one build cache.
+  test:
+    needs: check
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install "$RUST_STABLE" --profile minimal -t wasm32-unknown-unknown && rustup default "$RUST_STABLE"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: test-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: test-${{ env.RUST_STABLE }}-
       - run: cargo test --all-features
       - run: cargo test --release --all-features --test alloc --test props
       - name: vectors are reproducible
         run: |
           cargo run -q --example vectors --features issue | cmp - vectors/v1.json
           cargo run -q --example agent --features issue | cmp - vectors/agent.json
-
-  msrv:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.84
-      - run: cargo check --lib --all-features
-
-  miri:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with: { components: "miri, rust-src" }
-      - run: cargo miri test --lib --all-features
-      - run: cargo miri test --all-features --test vectors
-
-  wasm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { targets: wasm32-unknown-unknown }
       - run: cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
       - name: no imports, vectors agree, fuel deterministic, memory flat
         working-directory: harness
         run: cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors
 
-  fuzz:
-    runs-on: ubuntu-latest
+  # Unit tests and every ABI export under Miri: minutes, so it gates PRs.
+  miri-lib:
+    needs: check
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo install --locked cargo-fuzz
-      - run: cargo fuzz run verify fuzz/corpus/verify -- -max_total_time=60
-      - run: cargo fuzz run abi fuzz/corpus/abi -- -max_total_time=60
-      - run: cargo fuzz run agent fuzz/corpus/agent -- -max_total_time=60
+      - run: rustup toolchain install nightly --profile minimal -c miri,rust-src
+      - run: cargo +nightly miri test --lib --all-features
 
-  deny:
-    runs-on: ubuntu-latest
+  # All vectors with real Ed25519 under Miri takes ~15 minutes, and fuzzing is
+  # open-ended exploration rather than a deterministic gate, so both run after
+  # merge on main and nightly, not on every PR push.
+  miri-vectors:
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - run: rustup toolchain install nightly --profile minimal -c miri,rust-src
+      - run: cargo +nightly miri test --all-features --test vectors
+
+  fuzz:
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2
+      - run: command -v cargo-fuzz || cargo install --locked cargo-fuzz@0.13.2
+      - run: cargo +nightly fuzz run verify fuzz/corpus/verify -- -max_total_time=60
+      - run: cargo +nightly fuzz run abi fuzz/corpus/abi -- -max_total_time=60
+      - run: cargo +nightly fuzz run agent fuzz/corpus/agent -- -max_total_time=60

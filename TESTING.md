@@ -1,6 +1,6 @@
 # Testing
 
-Every check below also runs in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Results last recorded 2026-10-18 on Rust 1.94.0 and nightly 1.101 (aarch64-apple-darwin).
+Every check below also runs in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)); Miri over all vectors and fuzzing run on `main` and nightly rather than on every PR push. Results last recorded 2026-10-18 on Rust 1.94.0 and nightly 1.101 (aarch64-apple-darwin).
 
 ## Checks
 
