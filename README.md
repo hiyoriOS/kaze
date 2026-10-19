@@ -1,64 +1,74 @@
 # kzp
 
-The Kaze protocol (KZP) in Rust: platform-signed admission terms for AI agents, and mandates that say what an agent may do and who answers for it.
+The reference implementation of **Kaze**, a protocol that lets platforms admit AI agents on their own terms.
 
-Kaze adds two pieces on top of existing standards:
+- A platform answers an agent with an **Offer**: signed terms for one action, such as its exact amount.
+- The agent replies with a **mandate** from the person it acts for: what it may do, where, up to how much, and which operator answers for it.
+- **Web Bot Auth** (RFC 9421) identifies that operator.
 
-- **Offer:** a platform answers an agent with signed terms for each action: the exact amount, the liability floor, the price and the sanctioned path.
-- **Mandate:** the agent replies with an SD-JWT mandate from its principal. Its `act` and `liab` claims say what the agent may do, where, up to how much, and which operator is accountable.
+Identity, payment and receipts reuse existing standards. The full protocol is in [`spec/kaze.md`](spec/kaze.md).
 
-It also verifies Web Bot Auth (RFC 9421 HTTP Message Signatures), which tells a platform which operator is behind a request. Payment (x402, MPP) and receipts are reused, not reinvented. The protocol is specified in [`spec/kaze.md`](spec/kaze.md).
-
-## Example
+## Install
 
 ```toml
 [dependencies]
-kzp = "0.1"
+kzp = "0.2"
 ```
+
+## Verify an agent's request
 
 ```rust
-let offer = kzp::verify_offer(token, &jwks, "https://shop.example", now)?;
-let ctx = kzp::Context { now, operator, offer: &offer };
-let grant = kzp::verify(presentation, &ctx, &trust)?;
+// 1. Who is calling: the operator behind the request's Web Bot Auth signature.
+let url = kzp::signature_agent(&request)?;                  // request: kzp::Message
+let directory = kzp::agent::directory_url(&url)?;
+let keys = fetch_keys(&directory)?;                          // your HTTPS client
+let agent = kzp::verify_agent(&request, &keys, &directory, now)?;
+
+// 2. What they may do: the presentation, against the Offer you issued.
+let offer = kzp::verify_offer(&offer_token, &platform_keys, "https://shop.example", now)?;
+let ctx = kzp::Context { now, operator: &agent.operator, offer: &offer };
+let grant = kzp::verify(&presentation, &ctx, &trusted_issuers)?;
+
+// 3. Your side: mark grant.nonce used, apply quotas to grant.jti,
+//    and charge exactly grant.amount.
 ```
 
-The operator comes from Web Bot Auth. Read the agent URL, fetch its key directory, then verify:
+Every call is a pure function: no clock, no randomness, no I/O. You pass in `now`, the keys and the directory.
 
-```rust
-let url = kzp::signature_agent(&request)?;
-let keys = fetch(kzp::agent::directory_url(&url)?)?; // your HTTPS client
-let agent = kzp::verify_agent(&request, &keys, &kzp::agent::directory_url(&url)?, now)?;
-// agent.operator is what Context::operator must carry
-```
+## Features
 
-The verifier is a pure function: it never reads the clock, generates randomness, or does I/O. The caller keeps the state. It marks `grant.nonce` as used, applies quotas by `(grant.issuer, grant.jti)`, and settles `grant.price` for exactly `grant.amount`.
+| Feature | Adds |
+|---|---|
+| *(default)* | Verification only |
+| `issue` | Creating Offers, mandates and presentations, and signing requests |
 
 ## WebAssembly
 
-The same crate builds `kzp.wasm`. The module imports nothing. Its ABI takes and returns JSON and is documented in [`src/abi.rs`](src/abi.rs): verification exports, plus issuance exports when built with `issue`.
+Each [release](https://github.com/hiyoriOS/kaze/releases) ships `kzp.wasm` and its SHA-256. It is the same crate built with `issue`, it has no imports, and it exchanges JSON over a small ABI documented in [`src/abi.rs`](src/abi.rs). To build it yourself:
 
 ```bash
 cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
 ```
 
-## Features
+## Repository
 
-- `issue`: produce Offers, attestations, mandates and presentations, and sign Web Bot Auth requests. Verifiers don't need it.
+| Path | Contents |
+|---|---|
+| [`src/`](src/) | The crate |
+| [`spec/`](spec/) | The protocol and its JSON Schemas |
+| [`vectors/`](vectors/) | Conformance cases every implementation must pass |
+| [`docs/decisions/`](docs/decisions/) | Decision records |
+| [`TESTING.md`](TESTING.md) | How it's tested, and performance budgets |
+| [`CHANGELOG.md`](CHANGELOG.md) | Changes by version |
 
-## Testing
-
-[`vectors/v1.json`](vectors/v1.json) and [`vectors/agent.json`](vectors/agent.json) hold the conformance cases that every implementation must pass. [TESTING.md](TESTING.md) covers the other checks: Miri, fuzzing, leak and allocation budgets, the WebAssembly harness, and performance.
-
-## Supported Rust versions
-
-The minimum supported Rust version is 1.84.
+```bash
+cargo test --all-features
+```
 
 ## Status
 
-Draft 0 of the protocol. It is not yet submitted to a standards body, and the API may change. Only EdDSA (Ed25519) signatures and top-level disclosures are supported; see [`CHANGELOG.md`](CHANGELOG.md).
+Draft 0: not yet submitted to a standards body, and the API may change. The minimum supported Rust version is 1.84.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE) (SPDX `Apache-2.0`). This covers the whole repository: the crate, `kzp.wasm`, the specification and schemas in [`spec/`](spec/), and the conformance vectors in [`vectors/`](vectors/). [`docs/decisions/0002-apache-only.md`](docs/decisions/0002-apache-only.md) records why. Versions 0.1.0 and 0.2.0 were published under `MIT OR Apache-2.0`, and they keep that license.
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this repository by you shall be licensed under the Apache License, Version 2.0, as its section 5 provides, without any additional terms or conditions.
+[Apache-2.0](LICENSE)
