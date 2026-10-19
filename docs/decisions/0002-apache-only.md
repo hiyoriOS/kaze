@@ -1,0 +1,42 @@
+# 0002: `Apache-2.0` only
+
+Status: accepted
+Date: 2026-10-19
+Supersedes: [0001](0001-license.md)
+
+## Decision
+
+Everything in this repository is licensed under **`Apache-2.0`** alone. That covers the `kzp` crate, the `kzp.wasm` release asset, `spec/kaze.md`, `spec/schema/` and `vectors/`. The MIT option is dropped.
+
+The owner decided on one license instead of a choice of two.
+
+## What changes
+
+- **No MIT election:** an adopter can no longer elect MIT, so Apache-2.0's terms always apply:
+  - its explicit patent grant (§3), which ends for a licensee who sues over patents in the Work;
+  - its notice and NOTICE-file requirements (§4).
+
+  This closes the gap 0001 accepted, where an adopter could elect MIT, sue over patents, and keep its copyright license.
+- **Contributions:** they come in under Apache-2.0 (§5). There is still no CLA, and git history still has one human author, so this change needs no one else's consent.
+- **Files:**
+  - `LICENSE` holds the Apache-2.0 text, and `LICENSE-MIT` is removed.
+  - `Cargo.toml` (`license`, `include`), `fuzz/` and `harness/` say `Apache-2.0`.
+  - The README states the license.
+
+## What doesn't change
+
+- **Published versions:** `kzp` 0.1.0 and 0.2.0 on crates.io, and the v0.1.0 and v0.2.0 GitHub releases, were published under `MIT OR Apache-2.0`. A published version keeps the license it was published with, so anyone may still use those versions under MIT. Only later versions and the current repository are `Apache-2.0` alone.
+- **Dependencies:** every dependency in the crate and in `kzp.wasm` allows use in an Apache-2.0 work. That is the audit in 0001: MIT, BSD-3-Clause, ISC, Unicode-3.0, and dual MIT/Apache-2.0 crates.
+- **Consumers:** Ryo embeds `kzp.wasm` in a proprietary server. Apache-2.0 permits that, and server-side use triggers no obligation.
+
+## Costs, accepted
+
+- **GPL-2.0-only compatibility:** Apache-2.0 is incompatible with GPL-2.0-only projects, so those can't embed `kzp`. GPL-3.0 projects can.
+- **Corporate review:** Apache-2.0 alone is still on most offices' pre-approved lists, though `MIT OR Apache-2.0` is the Rust ecosystem's default.
+- **Notices:** a redistributor must keep the `LICENSE` text and any NOTICE file, and must mark files they changed (§4).
+
+## Follow-ups (unchanged from 0001)
+
+1. A royalty-free patent pledge for the protocol itself. Apache-2.0 §3 covers this code, not independent implementations of `spec/kaze.md`.
+2. A contribution sign-off (DCO) before the first outside contribution.
+3. A `THIRD-PARTY-NOTICES` file attached to each `kzp.wasm` release.

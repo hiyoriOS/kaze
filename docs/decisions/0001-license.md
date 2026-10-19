@@ -1,6 +1,6 @@
 # 0001: One license, `MIT OR Apache-2.0`, for the whole repository
 
-Status: accepted (code, spec, schemas, vectors). Two follow-ups await the owner: a patent pledge for the protocol, and the contribution sign-off.
+Status: superseded by [0002](0002-apache-only.md) on 2026-10-19: the repository is now `Apache-2.0` only. The dependency audit, the patent analysis and the follow-ups below still hold.
 Date: 2026-10-18
 
 ## Decision

@@ -8,9 +8,9 @@ readme = "README.md"
 repository = "https://github.com/hiyoriOS/kaze"
 keywords = ["agents", "sd-jwt", "jws", "payments", "protocol"]
 categories = ["authentication", "cryptography", "wasm"]
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 documentation = "https://docs.rs/kzp"
-include = ["/src", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+include = ["/src", "/README.md", "/CHANGELOG.md", "/LICENSE"]
 
 [package.metadata.docs.rs]
 all-features = true
