@@ -1,0 +1,47 @@
+{
+  "commands": [
+    {
+      "name": "fmt",
+      "run": "cargo fmt",
+      "role": "autofix",
+      "timeout": 60,
+      "local": true
+    },
+    {
+      "name": "clippy",
+      "run": "cargo clippy --all-features --all-targets -- -D warnings",
+      "role": "gate",
+      "timeout": 600,
+      "remote": true
+    },
+    {
+      "name": "test",
+      "run": "cargo test --all-features",
+      "role": "gate",
+      "timeout": 600,
+      "remote": true
+    }
+  ],
+  "vcs": {
+    "org": "hiyoriOS",
+    "repo": "kaze"
+  },
+  "validation": {
+    "sidecarImage": "7453d68d-01e6-4f2c-90ca-b287d92341dd"
+  },
+  "environment": {
+    "stack": "rust",
+    "setup": [
+      {
+        "name": "rust",
+        "command": "[ -x \"$HOME/.cargo/bin/cargo\" ] || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --component rustfmt,clippy; for f in \"$HOME\"/.cargo/bin/*; do sudo ln -sf \"$f\" /usr/local/bin/; done"
+      },
+      {
+        "name": "install",
+        "command": "cargo fetch"
+      }
+    ],
+    "image": "",
+    "image_version": ""
+  }
+}
