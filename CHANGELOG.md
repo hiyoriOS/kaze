@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **License:** the repository is now `Apache-2.0` only (decision 0002). Versions 0.1.0 and 0.2.0 stay under `MIT OR Apache-2.0`, as published.
+
 ## 0.2.0 (2026-10-18)
 
 - **Web Bot Auth:** `verify_agent`, `signature_agent` and `agent::directory_url` establish the operator from RFC 9421 HTTP Message Signatures (`draft-ietf-webbotauth-httpsig-protocol`). New error codes: `agent_header`, `agent_components`, `agent_expired`, `agent_key`, `agent_signature`.
