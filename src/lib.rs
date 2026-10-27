@@ -32,6 +32,8 @@ mod json;
 pub mod jws;
 pub mod mandate;
 pub mod offer;
+#[cfg(feature = "sign")]
+pub mod sign;
 mod verify;
 
 pub use agent::{signature_agent, verify_agent, Agent, Message};

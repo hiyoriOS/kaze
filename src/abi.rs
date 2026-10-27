@@ -13,20 +13,49 @@
 //!
 //! The response is `{"ok": ...}` or `{"error": {"code": ..., "message": ...}}`.
 //!
-//! Verification exports: `kzp_verify_offer`, `kzp_verify`, `kzp_signature_agent` and
-//! `kzp_verify_agent`. A build with the `issue` feature also exports `kzp_jwk`,
-//! `kzp_issue_offer`, `kzp_issue_mandate`, `kzp_present` and `kzp_sign_request`. These
-//! take a 32-byte Ed25519 seed (base64url) from the host, which owns key storage and
-//! randomness. `kzp_free` zeroes every buffer before releasing it, so a seed never
-//! outlives its call in linear memory.
+//! Which exports a build has depends on its features:
+//!
+//! | Feature | Exports |
+//! |---|---|
+//! | *(always)* | `kzp_alloc`, `kzp_free` |
+//! | `verify` (default) | `kzp_verify_offer`, `kzp_verify`, `kzp_signature_agent`, `kzp_verify_agent` |
+//! | `sign` | `kzp_sign_request`, `kzp_directory` |
+//! | `issue` (includes `sign`) | also `kzp_jwk`, `kzp_issue_offer`, `kzp_issue_mandate`, `kzp_present` |
+//!
+//! The exports that sign take a 32-byte Ed25519 seed (base64url) from the host, which
+//! owns key storage and randomness. `kzp_free` zeroes every buffer before releasing
+//! it, so a seed never outlives its call in linear memory.
+//!
+//! A build that only signs (`--no-default-features --features sign`) is the one a
+//! Go host embeds to sign its agent's requests; see `README.md` for the recipe. It
+//! exports `kzp_alloc`, `kzp_free`, `kzp_sign_request` and `kzp_directory`, and
+//! imports nothing. Its two operations:
+//!
+//! - `kzp_sign_request`: [`sign_request_json`]. The response's `ok` is the request
+//!   `message` with `Signature-Agent`, `Signature-Input` and `Signature` appended
+//!   in that order. Send them as headers, exactly as returned. Errors are
+//!   `agent_components` (the components cannot be covered: no `@authority` or
+//!   `@target-uri`, a header the message lacks, an unsupported or repeated component)
+//!   and `malformed` (the request itself, the seed, the label or the tag).
+//! - `kzp_directory`: [`directory_json`]. The response's `ok` is the body of
+//!   `/.well-known/http-message-signatures-directory`; serve its bytes as they are
+//!   with `Content-Type: application/http-message-signatures-directory+json`.
+//!
+//! Both are pure: the host passes the clock readings (`created`, `expires`), the
+//! nonce and the seed. `vectors/sign.json` holds requests and the exact responses.
 
+#[cfg(any(feature = "verify", feature = "sign"))]
 use serde::{Deserialize, Serialize};
 
-use crate::{json, verify, verify_offer, Context, Error, Jwk, Message, Trust};
+#[cfg(any(feature = "verify", feature = "sign"))]
+use crate::{json, Error};
+#[cfg(feature = "verify")]
+use crate::{verify, verify_offer, Context, Jwk, Message, Trust};
 
 /// Requests larger than this are refused before parsing.
 pub const MAX_INPUT: usize = 256 * 1024;
 
+#[cfg(feature = "verify")]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OfferRequest {
@@ -36,6 +65,7 @@ struct OfferRequest {
     now: i64,
 }
 
+#[cfg(feature = "verify")]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct VerifyRequest {
@@ -48,6 +78,7 @@ struct VerifyRequest {
     trust: Trust,
 }
 
+#[cfg(any(feature = "verify", feature = "sign"))]
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
 enum Response<T> {
@@ -55,6 +86,7 @@ enum Response<T> {
     Error { code: &'static str, message: String },
 }
 
+#[cfg(any(feature = "verify", feature = "sign"))]
 fn respond<T: Serialize>(r: Result<T, Error>) -> Vec<u8> {
     let body = match r {
         Ok(v) => Response::Ok(v),
@@ -67,6 +99,7 @@ fn respond<T: Serialize>(r: Result<T, Error>) -> Vec<u8> {
     serde_json::to_vec(&body).unwrap_or_default()
 }
 
+#[cfg(any(feature = "verify", feature = "sign"))]
 fn request<T: for<'de> Deserialize<'de>>(input: &[u8]) -> Result<T, Error> {
     if input.len() > MAX_INPUT {
         return Err(Error::Malformed("request too large"));
@@ -75,6 +108,7 @@ fn request<T: for<'de> Deserialize<'de>>(input: &[u8]) -> Result<T, Error> {
 }
 
 /// `{"offer","jwks","iss","now"}` to `{"ok": Offer}`.
+#[cfg(feature = "verify")]
 #[must_use]
 pub fn verify_offer_json(input: &[u8]) -> Vec<u8> {
     respond(
@@ -85,6 +119,7 @@ pub fn verify_offer_json(input: &[u8]) -> Vec<u8> {
 }
 
 /// `{"offer","jwks","iss","now","operator","presentation","trust"}` to `{"ok": Grant}`.
+#[cfg(feature = "verify")]
 #[must_use]
 pub fn verify_json(input: &[u8]) -> Vec<u8> {
     respond(request::<VerifyRequest>(input).and_then(|r| {
@@ -98,6 +133,7 @@ pub fn verify_json(input: &[u8]) -> Vec<u8> {
     }))
 }
 
+#[cfg(feature = "verify")]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AgentRequest {
@@ -108,44 +144,153 @@ struct AgentRequest {
     directory_url: String,
     #[serde(default)]
     now: i64,
+    /// The signature's `tag`; Web Bot Auth's when absent.
+    #[serde(default)]
+    tag: Option<String>,
 }
 
-/// `{"message"}` to `{"ok": {"url", "directory_url"}}`: which directory to fetch.
+#[cfg(feature = "verify")]
+impl AgentRequest {
+    fn tag(&self) -> &str {
+        self.tag.as_deref().unwrap_or(crate::agent::TAG)
+    }
+}
+
+/// `{"message","tag"}` to `{"ok": {"url", "directory_url"}}`: which directory to fetch.
+/// `tag` is optional and defaults to `web-bot-auth`.
+#[cfg(feature = "verify")]
 #[must_use]
 pub fn signature_agent_json(input: &[u8]) -> Vec<u8> {
     respond(request::<AgentRequest>(input).and_then(|r| {
-        let url = crate::signature_agent(&r.message)?;
+        let url = crate::agent::signature_agent_with_tag(&r.message, r.tag())?;
         let directory_url = crate::agent::directory_url(&url)?;
         Ok(serde_json::json!({ "url": url, "directory_url": directory_url }))
     }))
 }
 
-/// `{"message","directory","directory_url","now"}` to `{"ok": Agent}`.
+/// `{"message","directory","directory_url","now","tag"}` to `{"ok": Agent}`. `tag` is
+/// optional and defaults to `web-bot-auth`.
+#[cfg(feature = "verify")]
 #[must_use]
 pub fn verify_agent_json(input: &[u8]) -> Vec<u8> {
-    respond(
-        request::<AgentRequest>(input)
-            .and_then(|r| crate::verify_agent(&r.message, &r.directory, &r.directory_url, r.now)),
-    )
+    respond(request::<AgentRequest>(input).and_then(|r| {
+        crate::agent::verify_agent_with_tag(
+            &r.message,
+            &r.directory,
+            &r.directory_url,
+            r.now,
+            r.tag(),
+        )
+    }))
 }
 
-#[cfg(feature = "issue")]
-mod issuing {
-    //! Issuance entry points (feature `issue`).
+#[cfg(feature = "sign")]
+mod signing {
+    //! Request signing and the key directory (feature `sign`).
 
-    use ed25519_dalek::SigningKey;
+    use ed25519_dalek::{SigningKey, VerifyingKey};
     use serde::Deserialize;
-    use serde_json::{Map, Value};
 
     use super::{request, respond};
-    use crate::{issue, jws, Binding, Error, Jwk, Message, Offer};
+    use crate::sign::{self, RequestSignature};
+    use crate::{agent, jws, Error, Message};
 
-    fn key(seed: &str) -> Result<SigningKey, Error> {
+    pub(super) fn key(seed: &str) -> Result<SigningKey, Error> {
         let bytes: [u8; 32] = jws::unb64(seed)?
             .try_into()
             .map_err(|_| Error::Malformed("seed"))?;
         Ok(SigningKey::from_bytes(&bytes))
     }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SignIn {
+        message: Message,
+        label: String,
+        agent_url: String,
+        created: i64,
+        expires: i64,
+        #[serde(default)]
+        nonce: Option<String>,
+        /// The signature's `tag`; Web Bot Auth's when absent.
+        #[serde(default)]
+        tag: Option<String>,
+        /// The covered components; the method, authority and path when absent.
+        #[serde(default)]
+        components: Option<Vec<String>>,
+        seed: String,
+    }
+
+    /// `{"message","label","agent_url","created","expires","nonce","tag","components",
+    /// "seed"}` to `{"ok": Message}` with the three Web Bot Auth headers added.
+    ///
+    /// `nonce`, `tag` and `components` are optional. `tag` defaults to `web-bot-auth`
+    /// and `components` to `["@method","@authority","@path"]`; a request that sends
+    /// neither behaves exactly as it did before they existed. `signature-agent` is
+    /// always covered in addition.
+    #[must_use]
+    pub fn sign_request_json(input: &[u8]) -> Vec<u8> {
+        respond(request::<SignIn>(input).and_then(|mut r| {
+            let owned = r.components.take();
+            let components: Vec<&str> = owned.as_ref().map_or_else(
+                || sign::DEFAULT_COMPONENTS.to_vec(),
+                |c| c.iter().map(String::as_str).collect(),
+            );
+            sign::sign_request(
+                &mut r.message,
+                &RequestSignature {
+                    label: &r.label,
+                    agent_url: &r.agent_url,
+                    created: r.created,
+                    expires: r.expires,
+                    nonce: r.nonce.as_deref(),
+                    tag: r.tag.as_deref().unwrap_or(agent::TAG),
+                    components: &components,
+                },
+                &key(&r.seed)?,
+            )?;
+            Ok(r.message)
+        }))
+    }
+
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DirectoryIn {
+        seeds: Vec<String>,
+    }
+
+    /// `{"seeds"}` to `{"ok": {"keys": [Jwk, ...]}}`: the body to serve at
+    /// `/.well-known/http-message-signatures-directory`. Each key's `kid` is its JWK
+    /// thumbprint, the `keyid` a signature carries. Pass every seed whose key a
+    /// verifier may still need, so a rotation lists the old and new keys together.
+    #[must_use]
+    pub fn directory_json(input: &[u8]) -> Vec<u8> {
+        respond(request::<DirectoryIn>(input).and_then(|r| {
+            if r.seeds.is_empty() {
+                return Err(Error::Malformed("seeds"));
+            }
+            let keys = r
+                .seeds
+                .iter()
+                .map(|s| key(s).map(|k| k.verifying_key()))
+                .collect::<Result<Vec<VerifyingKey>, _>>()?;
+            sign::directory(&keys)
+        }))
+    }
+}
+
+#[cfg(feature = "sign")]
+pub use signing::{directory_json, sign_request_json};
+
+#[cfg(feature = "issue")]
+mod issuing {
+    //! Issuance entry points (feature `issue`).
+
+    use serde::Deserialize;
+    use serde_json::{Map, Value};
+
+    use super::{request, respond, signing::key};
+    use crate::{issue, Binding, Jwk, Offer};
 
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -221,43 +366,10 @@ mod issuing {
                 .and_then(|r| Ok(issue::present(&r.prefix, r.binding, &key(&r.seed)?))),
         )
     }
-
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct SignIn {
-        message: Message,
-        label: String,
-        agent_url: String,
-        created: i64,
-        expires: i64,
-        #[serde(default)]
-        nonce: Option<String>,
-        seed: String,
-    }
-
-    /// `{"message","label","agent_url","created","expires","nonce","seed"}` to
-    /// `{"ok": Message}` with the three Web Bot Auth headers added.
-    #[must_use]
-    pub fn sign_request_json(input: &[u8]) -> Vec<u8> {
-        respond(request::<SignIn>(input).and_then(|mut r| {
-            issue::sign_request(
-                &mut r.message,
-                &r.label,
-                &r.agent_url,
-                r.created,
-                r.expires,
-                r.nonce.as_deref(),
-                &key(&r.seed)?,
-            )?;
-            Ok(r.message)
-        }))
-    }
 }
 
 #[cfg(feature = "issue")]
-pub use issuing::{
-    issue_mandate_json, issue_offer_json, jwk_json, present_json, sign_request_json,
-};
+pub use issuing::{issue_mandate_json, issue_offer_json, jwk_json, present_json};
 
 #[cfg(any(target_arch = "wasm32", test))]
 #[allow(unsafe_code, unreachable_pub)] // exported to the host, not to Rust
@@ -329,6 +441,7 @@ mod exports {
         }
     }
 
+    #[cfg(any(feature = "verify", feature = "sign"))]
     macro_rules! export {
         ($($name:ident => $f:path),* $(,)?) => {$(
             /// See the module docs for the calling protocol.
@@ -344,11 +457,18 @@ mod exports {
         )*};
     }
 
+    #[cfg(feature = "verify")]
     export! {
         kzp_verify_offer => super::verify_offer_json,
         kzp_verify => super::verify_json,
         kzp_signature_agent => super::signature_agent_json,
         kzp_verify_agent => super::verify_agent_json,
+    }
+
+    #[cfg(feature = "sign")]
+    export! {
+        kzp_sign_request => super::sign_request_json,
+        kzp_directory => super::directory_json,
     }
 
     #[cfg(feature = "issue")]
@@ -357,16 +477,15 @@ mod exports {
         kzp_issue_offer => super::issue_offer_json,
         kzp_issue_mandate => super::issue_mandate_json,
         kzp_present => super::present_json,
-        kzp_sign_request => super::sign_request_json,
     }
 
     #[cfg(test)]
-    #[allow(clippy::indexing_slicing)]
+    #[allow(clippy::indexing_slicing, clippy::unwrap_used)]
     mod tests {
         //! Drives the exports exactly as a host does. Under Miri these prove the
         //! boundary code has no leak, double free or out-of-bounds access.
 
-        use super::{kzp_alloc, kzp_free, kzp_verify, kzp_verify_offer};
+        use super::{kzp_alloc, kzp_free};
 
         type Export = unsafe extern "C" fn(*const u8, usize, *mut usize);
 
@@ -401,22 +520,52 @@ mod exports {
             assert!(kzp_alloc(super::super::MAX_INPUT + 1).is_null());
         }
 
+        #[cfg(feature = "verify")]
         #[test]
         fn responses_round_trip() {
+            use super::{kzp_verify, kzp_verify_offer};
             assert!(call(kzp_verify_offer, b"{}").starts_with(br#"{"error":"#));
             assert!(call(kzp_verify, b"not json").starts_with(br#"{"error":"#));
             assert!(call(kzp_verify, b"").starts_with(br#"{"error":"#));
         }
 
+        #[cfg(feature = "sign")]
         #[test]
         fn null_ret_drops_the_response() {
             // SAFETY: null input with len 0 and null ret are both documented as fine.
-            unsafe { kzp_verify(std::ptr::null(), 0, std::ptr::null_mut()) };
+            unsafe { super::kzp_directory(std::ptr::null(), 0, std::ptr::null_mut()) };
+        }
+
+        /// The two exports a signing-only host uses, across the boundary, with a seed in
+        /// the request: the response is right and `kzp_free` has zeroed the seed.
+        #[cfg(feature = "sign")]
+        #[test]
+        fn sign_and_directory_cross_the_boundary() {
+            use super::{kzp_directory, kzp_sign_request};
+            let seed = crate::jws::b64(&[5u8; 32]);
+            let dir = call(
+                kzp_directory,
+                format!(r#"{{"seeds":["{seed}"]}}"#).as_bytes(),
+            );
+            let dir: serde_json::Value = serde_json::from_slice(&dir).unwrap();
+            let kid = dir["ok"]["keys"][0]["kid"].as_str().unwrap().to_owned();
+
+            let req = format!(
+                r#"{{"message":{{"method":"GET","scheme":"https","authority":"a.example","path":"/","headers":[]}},
+                "label":"sig","agent_url":"https://agent.example","created":1,"expires":2,
+                "tag":"agent-payer-auth","components":["@authority"],"seed":"{seed}"}}"#
+            );
+            let out = call(kzp_sign_request, req.as_bytes());
+            let out: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            let input = out["ok"]["headers"][1][1].as_str().unwrap();
+            assert!(input.contains(&format!(r#"keyid="{kid}""#)), "{input}");
+            assert!(input.contains(r#"tag="agent-payer-auth""#), "{input}");
+            assert!(input.starts_with(r#"sig=("@authority" "signature-agent";key="sig")"#));
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "verify"))]
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::{verify_json, MAX_INPUT};

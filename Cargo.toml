@@ -17,9 +17,16 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = []
+default = ["verify"]
+# The verification exports of the WebAssembly ABI (`kzp_verify`, `kzp_verify_agent`, ...)
+# and their JSON entry points in `abi`. The verifier itself is always compiled.
+verify = []
+# Signing requests and publishing the key directory (`sign`), and their ABI exports.
+# Needs no Offer or mandate. `--no-default-features --features sign` is the small
+# `kzp.wasm` that only signs.
+sign = []
 # Producing offers, attestations, mandates and presentations. Verifiers don't need it.
-issue = []
+issue = ["sign"]
 
 [dependencies]
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
@@ -42,9 +49,27 @@ required-features = ["issue"]
 name = "agent"
 required-features = ["issue"]
 
+[[example]]
+name = "sign"
+required-features = ["sign"]
+
+# Integration tests that call a feature's entry points need that feature.
+[[test]]
+name = "sign"
+required-features = ["sign"]
+
+[[test]]
+name = "alloc"
+required-features = ["verify"]
+
+[[test]]
+name = "props"
+required-features = ["verify"]
+
 [[bench]]
 name = "verify"
 harness = false
+required-features = ["verify"]
 
 [lints.rust]
 unsafe_code = "deny"
