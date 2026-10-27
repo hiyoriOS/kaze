@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "kzp"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -242,6 +242,7 @@ dependencies = [
 name = "kzp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "ed25519-dalek",
  "kzp",
  "libfuzzer-sys",
  "serde_json",

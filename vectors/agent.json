@@ -816,6 +816,317 @@
       "name": "agent_signature_swapped",
       "now": 1792300000,
       "why": "Signature-Agent swapped to another operator"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "ok": {
+          "label": "sig",
+          "operator": "https://agent.example"
+        }
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@method\" \"@authority\" \"@path\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792300300;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"agent-payer-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:jNNIfI4HPokyoABqBu4VubOzy5aVKPyz/YSNiNPIF2e7x7uIk4BJudna/D9xir4R6jh3DQQwVOMhbOCT5AqgAg==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "ok_tag",
+      "now": 1792300000,
+      "tag": "agent-payer-auth",
+      "why": "a caller-chosen tag, verified against that tag"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "error": "agent_header"
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@method\" \"@authority\" \"@path\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792300300;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"agent-payer-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:jNNIfI4HPokyoABqBu4VubOzy5aVKPyz/YSNiNPIF2e7x7uIk4BJudna/D9xir4R6jh3DQQwVOMhbOCT5AqgAg==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "tag_mismatch",
+      "now": 1792300000,
+      "tag": "agent-browser-auth",
+      "why": "signed with one tag, verified for another"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "error": "agent_header"
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@method\" \"@authority\" \"@path\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792300300;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"agent-payer-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:jNNIfI4HPokyoABqBu4VubOzy5aVKPyz/YSNiNPIF2e7x7uIk4BJudna/D9xir4R6jh3DQQwVOMhbOCT5AqgAg==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "tag_not_default",
+      "now": 1792300000,
+      "tag": "web-bot-auth",
+      "why": "a signature with another tag is not a web-bot-auth signature"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "error": "agent_signature"
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@method\" \"@authority\" \"@path\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792303600;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"agent-payer-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:tZWnVG70z+NVy3TFf770ayudVhvz4/yS9eDXFmqowA6FK3+qZqVeixrDjZDj44Xji+Oafx+Cw9dj1Or28Zs3Dg==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "tag_edited",
+      "now": 1792300000,
+      "tag": "agent-payer-auth",
+      "why": "the tag was changed after signing, so the signature no longer matches"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "ok": {
+          "label": "sig",
+          "operator": "https://agent.example"
+        }
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Content-Digest",
+            "sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792300300;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"web-bot-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:xqhZbOuE5TNxOml5kDJ//tpa94CUENg8fe+EtH0aaZlPjexiR9NypKP/Q1KSuZATsU45U9W8Z1JPqP1xCx/UBA==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "ok_components",
+      "now": 1792300000,
+      "tag": "web-bot-auth",
+      "why": "the signature also covers the body's Content-Digest and the Content-Type"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "error": "agent_signature"
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Content-Digest",
+            "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792300300;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"web-bot-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:xqhZbOuE5TNxOml5kDJ//tpa94CUENg8fe+EtH0aaZlPjexiR9NypKP/Q1KSuZATsU45U9W8Z1JPqP1xCx/UBA==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "components_digest_edited",
+      "now": 1792300000,
+      "tag": "web-bot-auth",
+      "why": "the body digest changed after signing: the covered Content-Digest binds the body"
+    },
+    {
+      "directory": [
+        {
+          "crv": "Ed25519",
+          "kid": "agent-1",
+          "kty": "OKP",
+          "x": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E"
+        }
+      ],
+      "directory_url": "https://agent.example/.well-known/http-message-signatures-directory",
+      "expect": {
+        "ok": {
+          "label": "sig",
+          "operator": "https://agent.example"
+        }
+      },
+      "message": {
+        "authority": "api.ryo.example",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Signature-Agent",
+            "sig=\"https://agent.example\""
+          ],
+          [
+            "Signature-Input",
+            "sig=(\"@target-uri\" \"signature-agent\";key=\"sig\");created=1792299990;expires=1792300300;keyid=\"0YuCW4N9LKPsO0jPKKgDYo3H7HH2LkiT8YLuFGslZXI\";alg=\"ed25519\";nonce=\"bm9uY2Uta3pw\";tag=\"web-bot-auth\""
+          ],
+          [
+            "Signature",
+            "sig=:6LI+xMmqpS4h7b+odEco7g57dbjUBEjPYreHE5A10gtSrfZXtZLR0n7bX+6ULnrH/HkdabIvZ4bR9O1vIzsyDQ==:"
+          ]
+        ],
+        "method": "POST",
+        "path": "/v1/agent/payments",
+        "scheme": "https"
+      },
+      "name": "ok_target_uri",
+      "now": 1792300000,
+      "tag": "web-bot-auth",
+      "why": "@target-uri alone is enough to bind the request to its host"
     }
   ],
   "note": "Seeds are test-only: key(n) = Ed25519 from 32 bytes of n. agent=5 other=6.",

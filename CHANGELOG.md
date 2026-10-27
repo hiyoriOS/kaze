@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Request signing no longer needs an Offer, and the signature `tag` is the caller's choice. This is for an agent that orders at businesses that never issue Offers: it only has to sign its requests (decision 0003).
+
+- **Breaking, Rust API:** `issue::sign_request` takes a `sign::RequestSignature` in place of its separate arguments. `tag` and `components` are new fields; `tag: agent::TAG` and `components: &sign::DEFAULT_COMPONENTS` give the previous output byte for byte (a test pins it against the 0.3 vector). The function now lives in `sign` and is re-exported from `issue`. A failed call leaves the message untouched.
+- **Tag as a parameter:** `agent::signature_agent_with_tag` and `agent::verify_agent_with_tag` check the single signature carrying a given `tag`. `signature_agent` and `verify_agent` are unchanged and use `agent::TAG`.
+- **Chosen components:** a signer picks the covered components. It must cover `@authority` or `@target-uri`, and `signature-agent` is always covered last. Covering `content-digest` binds the body.
+- **Key directory:** `sign::directory` builds the body for `/.well-known/http-message-signatures-directory`. Each key's `kid` is its JWK thumbprint, the `keyid` of its signatures. `sign::DIRECTORY_MEDIA_TYPE` names the media type.
+- **Features:** new `sign` feature (request signing and the directory; `issue` includes it) and `verify` feature, on by default, for the verification exports of the ABI. The verifier itself is unchanged and always built. `--no-default-features --features sign` builds a signing-only `kzp.wasm` of 217,596 bytes that exports `kzp_alloc`, `kzp_free`, `kzp_sign_request` and `kzp_directory` and nothing else. Code that built with `default-features = false` and called `abi::verify_*_json` now enables `verify`.
+- **ABI, additive:** `kzp_sign_request` accepts optional `tag` and `components`; a request without them is signed as before. `kzp_signature_agent` and `kzp_verify_agent` accept an optional `tag`. New export `kzp_directory`: `{"seeds"}` to `{"keys"}`.
+- **Tests:** `vectors/sign.json` (17 signing and 5 directory known answers) and 7 new Web Bot Auth cases in `vectors/agent.json`; `tests/sign.rs` checks signed output against an RFC 9421 Ed25519 verifier written without the crate's own signature base. A new `sign` fuzz target and a signing-only WebAssembly harness run. The first 20 Web Bot Auth vectors are unchanged.
+
 ## 0.3.0 (2026-10-26)
 
 No API changes. This release is the license change and the project documents around it; the code is the same as 0.2.0.

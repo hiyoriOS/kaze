@@ -10,7 +10,8 @@ license = "Apache-2.0"
 cargo-fuzz = true
 
 [dependencies]
-kzp = { path = ".." }
+kzp = { path = "..", features = ["sign"] }
+ed25519-dalek = { version = "2", default-features = false }
 libfuzzer-sys = "0.4"
 serde_json = "1"
 
@@ -31,6 +32,13 @@ bench = false
 [[bin]]
 name = "agent"
 path = "fuzz_targets/agent.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sign"
+path = "fuzz_targets/sign.rs"
 test = false
 doc = false
 bench = false

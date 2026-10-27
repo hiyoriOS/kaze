@@ -2,7 +2,8 @@
 
 #![allow(missing_docs, clippy::unwrap_used, clippy::indexing_slicing)]
 
-use kzp::{verify_agent, Jwk, Message};
+use kzp::agent::{verify_agent_with_tag, TAG};
+use kzp::{Jwk, Message};
 use serde_json::Value;
 
 #[test]
@@ -13,11 +14,12 @@ fn agent_vectors() {
     for c in cases {
         let m: Message = serde_json::from_value(c["message"].clone()).unwrap();
         let d: Vec<Jwk> = serde_json::from_value(c["directory"].clone()).unwrap();
-        let got = verify_agent(
+        let got = verify_agent_with_tag(
             &m,
             &d,
             c["directory_url"].as_str().unwrap(),
             c["now"].as_i64().unwrap(),
+            c.get("tag").map_or(TAG, |t| t.as_str().unwrap()),
         );
         let ok = match (&got, c["expect"].get("ok"), c["expect"].get("error")) {
             (Ok(a), Some(w), _) => a.operator == w["operator"] && a.label == w["label"],

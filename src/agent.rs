@@ -15,7 +15,9 @@ use crate::{jws, Error, Jwk, SKEW};
 
 /// The well-known path of an agent's key directory.
 pub const DIRECTORY_PATH: &str = "/.well-known/http-message-signatures-directory";
-/// The `tag` a Web Bot Auth signature carries.
+/// The `tag` a Web Bot Auth signature carries. Verifiers and signers take the tag as a
+/// parameter; this is the value to pass for plain Web Bot Auth, and what the
+/// parameterless functions use.
 pub const TAG: &str = "web-bot-auth";
 /// Longest `expires - created` accepted: 24 hours, as the draft recommends.
 pub const MAX_AGE: i64 = 86_400;
@@ -103,7 +105,7 @@ pub fn thumbprint(jwk: &Jwk) -> Result<String, Error> {
     Ok(jws::b64(&Sha256::digest(canonical.as_bytes())))
 }
 
-/// The single Web Bot Auth signature on a request.
+/// The single signature on a request that carries the wanted `tag`.
 struct Signed {
     label: String,
     components: InnerList,
@@ -131,15 +133,15 @@ fn param_str<'a>(params: &'a sfv::Parameters, key: &str) -> Option<&'a str> {
         .map(sfv::StringRef::as_str)
 }
 
-fn signed(msg: &Message) -> Result<Signed, Error> {
+fn signed(msg: &Message, tag: &str) -> Result<Signed, Error> {
     let inputs = dictionary(msg, "signature-input")?;
     let mut ours = inputs.iter().filter_map(|(label, entry)| match entry {
-        ListEntry::InnerList(il) if param_str(&il.params, "tag") == Some(TAG) => {
+        ListEntry::InnerList(il) if param_str(&il.params, "tag") == Some(tag) => {
             Some((label.as_str().to_owned(), il.clone()))
         }
         _ => None,
     });
-    // Exactly one Web Bot Auth signature: which key speaks for the request must
+    // Exactly one signature with this tag: which key speaks for the request must
     // never depend on the order of a dictionary.
     let (label, components) = ours.next().ok_or(Error::AgentHeader)?;
     if ours.next().is_some() {
@@ -208,7 +210,13 @@ fn origin(url: &str) -> Result<String, Error> {
 
 /// The agent URL of the request's Web Bot Auth signature: fetch its directory first.
 pub fn signature_agent(msg: &Message) -> Result<String, Error> {
-    let s = signed(msg)?;
+    signature_agent_with_tag(msg, TAG)
+}
+
+/// [`signature_agent`] for the single signature whose `tag` is `tag`, such as the
+/// `agent-payer-auth` a card network's agent protocol uses.
+pub fn signature_agent_with_tag(msg: &Message, tag: &str) -> Result<String, Error> {
+    let s = signed(msg, tag)?;
     origin(&s.url)?;
     Ok(s.url)
 }
@@ -309,8 +317,21 @@ pub fn verify_agent(
     directory_url: &str,
     now: i64,
 ) -> Result<Agent, Error> {
+    verify_agent_with_tag(msg, directory, directory_url, now, TAG)
+}
+
+/// [`verify_agent`] for the single signature whose `tag` is `tag`. Everything else is
+/// checked the same way, including that the signature covers its own `Signature-Agent`
+/// member.
+pub fn verify_agent_with_tag(
+    msg: &Message,
+    directory: &[Jwk],
+    directory_url: &str,
+    now: i64,
+    tag: &str,
+) -> Result<Agent, Error> {
     let now = crate::time(now)?;
-    let s = signed(msg)?;
+    let s = signed(msg, tag)?;
     if self::directory_url(&s.url)? != directory_url {
         return Err(Error::AgentKey);
     }

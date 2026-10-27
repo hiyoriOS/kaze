@@ -13,7 +13,8 @@
 )]
 
 use ed25519_dalek::SigningKey;
-use kzp::{agent, issue, Jwk, Message};
+use kzp::sign::{self, RequestSignature};
+use kzp::{agent, Jwk, Message};
 use serde_json::{json, Value};
 
 const NOW: i64 = 1_792_300_000;
@@ -36,14 +37,37 @@ fn request() -> Message {
 }
 
 fn signed(url: &str, created: i64, expires: i64, k: &SigningKey) -> Message {
-    let mut m = request();
-    issue::sign_request(
-        &mut m,
-        "sig",
+    signed_with(
+        request(),
         url,
         created,
         expires,
-        Some("bm9uY2Uta3pw"),
+        k,
+        agent::TAG,
+        &sign::DEFAULT_COMPONENTS,
+    )
+}
+
+fn signed_with(
+    mut m: Message,
+    url: &str,
+    created: i64,
+    expires: i64,
+    k: &SigningKey,
+    tag: &str,
+    components: &[&str],
+) -> Message {
+    sign::sign_request(
+        &mut m,
+        &RequestSignature {
+            label: "sig",
+            agent_url: url,
+            created,
+            expires,
+            nonce: Some("bm9uY2Uta3pw"),
+            tag,
+            components,
+        },
         k,
     )
     .unwrap();
@@ -72,6 +96,7 @@ fn main() {
                           "directory_url": u, "now": now, "expect": expect}),
             );
         };
+
     let err = |c: &str| json!({ "error": c });
 
     add(
@@ -304,6 +329,111 @@ fn main() {
         &agent::directory_url("https://other.example").unwrap(),
         NOW,
         err("agent_signature"),
+    );
+
+    // The cases below choose the tag and the covered components. They come last, and
+    // only they carry a `tag`, so every case above is unchanged.
+    let payer = "agent-payer-auth";
+    let mut add_tagged = |name: &str, why: &str, tag: &str, m: &Message, expect: Value| {
+        cases.push(
+            json!({"name": name, "why": why, "message": m, "directory": directory,
+                      "directory_url": dir_url, "now": NOW, "tag": tag, "expect": expect}),
+        );
+    };
+    let tagged = signed_with(
+        request(),
+        AGENT,
+        NOW - 10,
+        NOW + 300,
+        &agent_key,
+        payer,
+        &sign::DEFAULT_COMPONENTS,
+    );
+    add_tagged(
+        "ok_tag",
+        "a caller-chosen tag, verified against that tag",
+        payer,
+        &tagged,
+        json!({"ok": {"operator": AGENT, "label": "sig"}}),
+    );
+    add_tagged(
+        "tag_mismatch",
+        "signed with one tag, verified for another",
+        "agent-browser-auth",
+        &tagged,
+        err("agent_header"),
+    );
+    add_tagged(
+        "tag_not_default",
+        "a signature with another tag is not a web-bot-auth signature",
+        agent::TAG,
+        &tagged,
+        err("agent_header"),
+    );
+    let mut m = ok.clone();
+    header(&mut m, "signature-input", |v| {
+        v.replace("tag=\"web-bot-auth\"", "tag=\"agent-payer-auth\"")
+    });
+    add_tagged(
+        "tag_edited",
+        "the tag was changed after signing, so the signature no longer matches",
+        payer,
+        &m,
+        err("agent_signature"),
+    );
+    let mut with_body = request();
+    with_body.headers.push((
+        "Content-Digest".into(),
+        "sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:".into(),
+    ));
+    let bound = signed_with(
+        with_body,
+        AGENT,
+        NOW - 10,
+        NOW + 300,
+        &agent_key,
+        agent::TAG,
+        &[
+            "@method",
+            "@authority",
+            "@path",
+            "content-type",
+            "content-digest",
+        ],
+    );
+    add_tagged(
+        "ok_components",
+        "the signature also covers the body's Content-Digest and the Content-Type",
+        agent::TAG,
+        &bound,
+        json!({"ok": {"operator": AGENT, "label": "sig"}}),
+    );
+    let mut m = bound.clone();
+    header(&mut m, "content-digest", |_| {
+        "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:".into()
+    });
+    add_tagged(
+        "components_digest_edited",
+        "the body digest changed after signing: the covered Content-Digest binds the body",
+        agent::TAG,
+        &m,
+        err("agent_signature"),
+    );
+    let target = signed_with(
+        request(),
+        AGENT,
+        NOW - 10,
+        NOW + 300,
+        &agent_key,
+        agent::TAG,
+        &["@target-uri"],
+    );
+    add_tagged(
+        "ok_target_uri",
+        "@target-uri alone is enough to bind the request to its host",
+        agent::TAG,
+        &target,
+        json!({"ok": {"operator": AGENT, "label": "sig"}}),
     );
 
     let out = json!({

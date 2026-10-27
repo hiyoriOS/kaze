@@ -48,6 +48,8 @@ cp "$T1/wasm32-unknown-unknown/wasm/kzp.wasm" "$OUT/"
 
 Record `rustc --version` for the release notes. A different toolchain can produce a different hash.
 
+The signing-only `kzp.wasm` that a host embeds to sign its requests is built the same way, twice, with `--no-default-features --features sign` in place of `--features issue`. Its hashes must also match. Ship it next to the full build under its own name, for example `kzp-sign.wasm` with `kzp-sign.wasm.sha256`, and list its hash in the release notes, because a host pins to it.
+
 ## 5. Generate `THIRD-PARTY-NOTICES`
 
 This lists the normal dependencies in `kzp.wasm`'s build (`wasm32-unknown-unknown`, `--features issue`), and fails on a license outside `accepted` in [`about.toml`](about.toml), which mirrors `allow` in [`deny.toml`](deny.toml). Do not commit the output.
