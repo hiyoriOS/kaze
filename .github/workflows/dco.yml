@@ -1,0 +1,48 @@
+# Developer Certificate of Origin: every commit in a PR must be signed off.
+#
+# Separate from ci.yml on purpose: ci.yml skips Markdown-only changes, and a
+# sign-off is owed on those too. Uses only GitHub-owned actions and runs on
+# Blacksmith runners, like ci.yml. See CONTRIBUTING.md.
+name: dco
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels the run it replaces.
+concurrency:
+  group: dco-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  signoff:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      # Full history, so base..head resolves whatever the PR's size.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every commit has a Signed-off-by for its author
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Merge commits are excluded: they are not authored contributions.
+          # A commit passes if one of its Signed-off-by trailers carries the
+          # author's own email (compared case-insensitively).
+          bad=0
+          for sha in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            email=$(git log -1 --format=%ae "$sha")
+            if ! git log -1 --format='%(trailers:key=Signed-off-by,valueonly,separator=%x0a)' "$sha" \
+                | grep -qiF -- "<$email>"; then
+              echo "::error::missing 'Signed-off-by: ... <$email>': $(git log -1 --format='%h %s' "$sha")"
+              echo "$sha $(git log -1 --format=%s "$sha")"
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "Sign off each commit above with: git commit --amend -s (or git rebase --signoff $BASE)."
+            exit 1
+          fi
+          echo "All commits in $BASE..$HEAD are signed off."

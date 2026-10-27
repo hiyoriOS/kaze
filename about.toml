@@ -1,0 +1,17 @@
+# cargo-about: THIRD-PARTY-NOTICES for the dependencies compiled into kzp.wasm.
+# Run it as RELEASING.md says. The output is attached to a release, not committed.
+#
+# The graph is exactly kzp.wasm's: the wasm32 target and normal dependencies
+# only (no dev, build or tooling crates). The `issue` feature is not settable
+# here, so RELEASING.md passes `--features issue` on the command line.
+accepted = [
+    # Keep in step with `allow` in deny.toml.
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "ISC",
+]
+targets = ["wasm32-unknown-unknown"]
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
