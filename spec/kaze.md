@@ -261,7 +261,10 @@ The reference verifier makes step 1 a separate call, `verify_offer(token, jwks, 
 ## 9. Open questions
 
 1. **ES256.** AP2 requires non-deterministic signatures on checkout JWTs. Should Kaze require ES256 for `hp` mandates?
+   *Decided in [0003](../docs/decisions/0003-outbound-scope.md): add ES256 alongside Ed25519 in 0.4.0.*
 2. **Disclosure granularity.** Should each `act` element be its own disclosure (draft 1)?
 3. **Revocation.** For long-lived mandates, should Kaze use a status list (IETF Token Status List) or rely on short expiries?
+   *Decided in [0003](../docs/decisions/0003-outbound-scope.md): short expiries, one mandate per order, no status list.*
 4. **Where to standardise.** Should the Offer go to the IETF (next to webbotauth and the HTTP `Payment` auth scheme) and `act`/`liab` to the FIDO Payments working group alongside AP2? Or should both be a single profile?
+   *Decided in [0003](../docs/decisions/0003-outbound-scope.md): a single profile on top of AP2 and UCP.*
 5. **Action registry.** Should there be a shared registry of action ids?
