@@ -2,11 +2,22 @@
 //! - checks the module imports nothing (pure function, no WASI, no host calls);
 //! - runs every conformance and Web Bot Auth vector through the ABI;
 //! - drives a full issue → present → verify round trip through the issuance exports;
+//! - runs every signing and key-directory vector (`sign.json`) and demands the same bytes;
 //! - reports deterministic fuel (≈ executed instructions) per vector;
 //! - runs a long loop over every export and asserts linear memory stops growing.
 //!
+//! The full `kzp.wasm` (verification and issuance) gets all of the above:
+//!
 //!     cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
 //!     cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors
+//!
+//! The signing-only `kzp.wasm` must export exactly `kzp_alloc`, `kzp_free`,
+//! `kzp_sign_request` and `kzp_directory` (plus `memory`), and gets the signing vectors
+//! and the memory check:
+//!
+//!     cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown \
+//!         --no-default-features --features sign --target-dir target/sign
+//!     cargo run --release -- ../target/sign/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors
 
 use std::collections::BTreeMap;
 
@@ -89,15 +100,15 @@ impl Kzp {
     }
 
     /// Steady-state fuel: the first call pays allocator growth; later ones must agree.
-    /// The verification exports agree exactly. The Web Bot Auth ones parse structured
-    /// fields into sfv's hash-seeded dictionaries, so their cost may move by a few
-    /// instructions in ten thousand (never their result); they must agree within 0.1%.
+    /// The verification exports agree exactly. The Web Bot Auth ones, and signing, build
+    /// structured fields in sfv's hash-seeded dictionaries, so their cost may move by a
+    /// few instructions in ten thousand (never their result); they must agree within 0.1%.
     fn steady(&mut self, export: &str, req: &Value) -> (Value, u64) {
         let (got, _) = self.call(export, req);
         let (again, a) = self.call(export, req);
         let (_, b) = self.call(export, req);
         assert_eq!(got, again, "{export}: result must be deterministic");
-        if export.contains("agent") {
+        if export.contains("agent") || export.contains("sign") {
             assert!(a.abs_diff(b) * 1000 <= a, "{export}: fuel {a} vs {b}");
         } else {
             assert_eq!(a, b, "{export}: fuel must be deterministic");
@@ -119,11 +130,38 @@ fn main() {
     let mut k = Kzp::new(&std::fs::read(&args[1]).expect("kzp.wasm"));
     let dir = std::path::Path::new(&args[2]);
     let load = |f: &str| -> Value { serde_json::from_str(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap() };
-    let v1 = load("v1.json");
-    let agent = load("agent.json");
+    let sign = load("sign.json");
 
     let mut failed = Vec::new();
     let mut loop_calls: Vec<(String, Value)> = Vec::new();
+
+    // Signing vectors: every build that signs must produce these bytes.
+    for (export, cases) in [("kzp_sign_request", &sign["sign"]), ("kzp_directory", &sign["directory"])] {
+        for c in cases.as_array().unwrap() {
+            let (got, fuel) = k.steady(export, &c["request"]);
+            let good = match (got.get("ok"), c["expect"].get("ok"), c["expect"].get("error")) {
+                (Some(g), Some(w), _) => g == w,
+                (None, _, Some(code)) => got["error"]["code"] == *code,
+                _ => false,
+            };
+            if !good {
+                failed.push(format!("{export} {}: {got}", c["name"]));
+            }
+            println!("{:28} fuel {fuel:>10}", format!("{export}:{}", c["name"].as_str().unwrap()));
+            loop_calls.push((export.into(), c["request"].clone()));
+        }
+    }
+    assert!(failed.is_empty(), "wasm disagrees with signing vectors: {failed:#?}");
+    println!("{} signing and directory vectors agree byte for byte", loop_calls.len());
+
+    if !k.exports.contains_key("kzp_verify") {
+        let names: Vec<&str> = k.exports.keys().map(String::as_str).collect();
+        assert_eq!(names, ["kzp_directory", "kzp_sign_request"], "a signing-only build exports exactly these");
+        leak_check(&mut k, &loop_calls);
+        return;
+    }
+    let v1 = load("v1.json");
+    let agent = load("agent.json");
 
     // Conformance vectors.
     for c in v1["cases"].as_array().unwrap() {
@@ -146,8 +184,11 @@ fn main() {
 
     // Web Bot Auth vectors.
     for c in agent["cases"].as_array().unwrap() {
-        let req = json!({"message": c["message"], "directory": c["directory"],
+        let mut req = json!({"message": c["message"], "directory": c["directory"],
                          "directory_url": c["directory_url"], "now": c["now"]});
+        if let Some(tag) = c.get("tag") {
+            req["tag"] = tag.clone();
+        }
         let (got, fuel) = k.steady("kzp_verify_agent", &req);
         let w = &c["expect"];
         let good = match (got.get("ok"), w.get("ok"), w.get("error")) {
@@ -197,6 +238,11 @@ fn main() {
     let (who, _) = k.steady("kzp_verify_agent", &json!({"message": signed, "directory": [agent_jwk],
         "directory_url": dir_url, "now": now}));
     assert_eq!(ok(&who)["operator"], op, "round trip agent: {who}");
+    let payer = ok(&k.call("kzp_sign_request", &json!({"message": msg, "label": "sig", "agent_url": op,
+        "created": now - 1, "expires": now + 600, "tag": "agent-payer-auth", "seed": seed(13)})).0).clone();
+    let (who, _) = k.steady("kzp_verify_agent", &json!({"message": payer, "directory": [agent_jwk],
+        "directory_url": dir_url, "now": now, "tag": "agent-payer-auth"}));
+    assert_eq!(ok(&who)["operator"], op, "round trip tagged agent: {who}");
     println!("round trip: issue offer + mandate, present, sign request, verify agent + grant: ok");
     loop_calls.push(("kzp_verify".into(), verify));
 
@@ -207,14 +253,18 @@ fn main() {
         agent["cases"].as_array().unwrap().len()
     );
 
-    // Leak check at the WebAssembly level: after warm-up, linear memory must not grow.
-    for (e, r) in &loop_calls {
+    leak_check(&mut k, &loop_calls);
+}
+
+/// Leak check at the WebAssembly level: after warm-up, linear memory must not grow.
+fn leak_check(k: &mut Kzp, loop_calls: &[(String, Value)]) {
+    for (e, r) in loop_calls {
         k.call(e, r);
     }
     let warm = k.pages();
     let rounds = 1_000;
     for _ in 0..rounds {
-        for (e, r) in &loop_calls {
+        for (e, r) in loop_calls {
             k.call(e, r);
         }
     }

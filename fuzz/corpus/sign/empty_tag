@@ -1,0 +1,1 @@
+{"agent_url":"https://agent.example","created":1792299990,"expires":1792303600,"label":"sig","message":{"authority":"api.ryo.example","headers":[["Content-Type","application/json"]],"method":"POST","path":"/v1/agent/payments","scheme":"https"},"nonce":"bm9uY2Uta3pw","seed":"BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU","tag":""}

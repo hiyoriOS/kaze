@@ -42,6 +42,7 @@ jobs:
           restore-keys: check-${{ env.RUST_STABLE }}-
       - run: cargo fmt --check
       - run: cargo clippy --all-features --all-targets
+      - run: cargo clippy --no-default-features --features sign --all-targets
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
       - name: cargo deny check
         run: |
@@ -56,6 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain install 1.84 --profile minimal && rustup default 1.84
       - run: cargo check --lib --all-features
+      - run: cargo check --lib --no-default-features --features sign
 
   # Tests, reproducible vectors and the WebAssembly harness share one build cache.
   test:
@@ -73,15 +75,27 @@ jobs:
           key: test-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: test-${{ env.RUST_STABLE }}-
       - run: cargo test --all-features
+      - run: cargo test --no-default-features --features sign
       - run: cargo test --release --all-features --test alloc --test props
       - name: vectors are reproducible
         run: |
           cargo run -q --example vectors --features issue | cmp - vectors/v1.json
           cargo run -q --example agent --features issue | cmp - vectors/agent.json
+          cargo run -q --example sign --features sign | cmp - vectors/sign.json
       - run: cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
       - name: no imports, vectors agree, fuel deterministic, memory flat
         working-directory: harness
         run: cargo run --release -- ../target/wasm32-unknown-unknown/wasm/kzp.wasm ../vectors
+      # The signing-only build that a host embeds to sign its requests: exactly four
+      # exports, the signing vectors byte for byte, and the same bytes from two builds.
+      - name: signing-only kzp.wasm is reproducible and passes the harness
+        run: |
+          for t in a b; do
+            CARGO_TARGET_DIR="$RUNNER_TEMP/sign-$t" cargo rustc --locked --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --no-default-features --features sign
+          done
+          cmp "$RUNNER_TEMP/sign-a/wasm32-unknown-unknown/wasm/kzp.wasm" "$RUNNER_TEMP/sign-b/wasm32-unknown-unknown/wasm/kzp.wasm"
+          sha256sum "$RUNNER_TEMP/sign-a/wasm32-unknown-unknown/wasm/kzp.wasm"
+          cd harness && cargo run --release -- "$RUNNER_TEMP/sign-a/wasm32-unknown-unknown/wasm/kzp.wasm" ../vectors
 
   # Unit tests and every ABI export under Miri: minutes, so it gates PRs.
   miri-lib:
@@ -122,3 +136,4 @@ jobs:
       - run: cargo +nightly fuzz run verify fuzz/corpus/verify -- -max_total_time=60
       - run: cargo +nightly fuzz run abi fuzz/corpus/abi -- -max_total_time=60
       - run: cargo +nightly fuzz run agent fuzz/corpus/agent -- -max_total_time=60
+      - run: cargo +nightly fuzz run sign fuzz/corpus/sign -- -max_total_time=60
