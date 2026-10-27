@@ -12,7 +12,7 @@ Identity, payment and receipts reuse existing standards. The full protocol is in
 
 ```toml
 [dependencies]
-kzp = "0.2"
+kzp = "0.3"
 ```
 
 ## Verify an agent's request
