@@ -1,0 +1,26 @@
+Third-party notices for kzp.wasm
+
+kzp.wasm is built from the kzp crate (Apache-2.0, see LICENSE in the kzp
+source) and the crates below. Their licenses and copyright notices follow.
+
+This list comes from the Cargo graph of normal dependencies, so it may also
+name crates that run only at build time, such as proc-macro crates. That adds
+notices; it never omits one.
+
+Overview
+{{#each overview}}
+- {{{name}}}: {{count}} crate(s)
+{{/each}}
+
+{{#each licenses}}
+================================================================================
+{{{name}}} ({{{id}}})
+
+Used by:
+{{#each used_by}}
+- {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

@@ -3,6 +3,9 @@
 ## Unreleased
 
 - **License:** the repository is now `Apache-2.0` only (decision 0002). Versions 0.1.0 and 0.2.0 stay under `MIT OR Apache-2.0`, as published.
+- **Patents:** the specification (`spec/kaze.md` and `spec/schema/`) is available under the Open Web Foundation Final Specification Agreement (OWFa 1.0), in `PATENTS.md`. It covers independent implementations too.
+- **Contributions:** `CONTRIBUTING.md` requires a `Signed-off-by` on every commit (Developer Certificate of Origin 1.1). A new `dco` workflow checks every PR, Markdown-only ones included.
+- **Release process:** `RELEASING.md` lists the release steps. `about.toml` and `about.hbs` generate a `THIRD-PARTY-NOTICES` file for each `kzp.wasm` release.
 
 ## 0.2.0 (2026-10-18)
 

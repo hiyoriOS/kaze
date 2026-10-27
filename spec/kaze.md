@@ -2,6 +2,8 @@
 
 Status: draft 0, revision 3 (2026-10-18): adds how a verifier establishes the operator (§7.0). Not yet submitted anywhere.
 
+Patents: this specification is available under OWFa 1.0 (see [`PATENTS.md`](../PATENTS.md)).
+
 ## 1. Purpose
 
 Platforms block agents for seven reasons: they can't identify the agent, can't prove who authorised it, see shared passwords, lose the customer, get scraped for free, get overloaded, and face unclear law. An analysis of 29 publicly reported incidents (October 2026) found that existing standards already cover identity, payment and receipts. Two pieces are missing:

@@ -72,3 +72,5 @@ Draft 0: not yet submitted to a standards body, and the API may change. The mini
 ## License
 
 [Apache-2.0](LICENSE)
+
+Patents: the specification is available under OWFa 1.0 ([PATENTS.md](PATENTS.md)).
