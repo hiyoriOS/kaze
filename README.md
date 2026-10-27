@@ -35,12 +35,39 @@ let grant = kzp::verify(&presentation, &ctx, &trusted_issuers)?;
 
 Every call is a pure function: no clock, no randomness, no I/O. You pass in `now`, the keys and the directory.
 
+## Sign an agent's request
+
+An agent that orders at a business with no Offers still signs its requests. This needs no Offer and no mandate:
+
+```rust
+use kzp::sign::{self, RequestSignature};
+
+let mut request = kzp::Message { /* method, scheme, authority, path, headers */ };
+sign::sign_request(
+    &mut request,
+    &RequestSignature {
+        label: "sig",
+        agent_url: "https://agent.example",       // serves the key directory
+        created: now,
+        expires: now + 300,
+        nonce: Some(&nonce),
+        tag: kzp::agent::TAG,                       // or the tag your verifier looks for
+        components: &sign::DEFAULT_COMPONENTS,      // add "content-digest" to bind the body
+    },
+    &signing_key,
+)?;                                                 // adds Signature-Agent, Signature-Input, Signature
+
+// Serve this at https://agent.example/.well-known/http-message-signatures-directory
+let directory = sign::directory(&[signing_key.verifying_key()])?;
+```
+
 ## Features
 
 | Feature | Adds |
 |---|---|
-| *(default)* | Verification only |
-| `issue` | Creating Offers, mandates and presentations, and signing requests |
+| `verify` *(default)* | The verification exports of the WebAssembly ABI. The verifier itself is always built. |
+| `sign` | Signing requests and the key directory, and their ABI exports |
+| `issue` | Creating Offers, mandates and presentations. Includes `sign`. |
 
 ## WebAssembly
 
@@ -49,6 +76,28 @@ Each [release](https://github.com/hiyoriOS/kaze/releases) ships `kzp.wasm` and i
 ```bash
 cargo rustc --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown --features issue
 ```
+
+### Signing-only `kzp.wasm`
+
+A host that only signs its own requests, such as a Go service, embeds a smaller build: 217,596 bytes, no imports, and four functions plus `memory`.
+
+| Export | Request | Response `ok` |
+|---|---|---|
+| `kzp_alloc`, `kzp_free` | | |
+| `kzp_sign_request` | `{"message","label","agent_url","created","expires","nonce"?,"tag"?,"components"?,"seed"}` | `message` with `Signature-Agent`, `Signature-Input` and `Signature` added |
+| `kzp_directory` | `{"seeds": ["<base64url>", ...]}` | `{"keys": [JWK, ...]}`, the body for the key-directory endpoint; each `kid` is the JWK thumbprint, which is the signature's `keyid` |
+
+`seed` is a 32-byte Ed25519 seed, base64url without padding; the host owns it. `tag` defaults to `web-bot-auth`, `components` to `["@method","@authority","@path"]`, and `signature-agent` is always covered after them. Calling convention, errors and memory rules are in [`src/abi.rs`](src/abi.rs); known answers are in [`vectors/sign.json`](vectors/sign.json).
+
+To build it, from a clean checkout of a tag, with the toolchain recorded in the release notes:
+
+```bash
+cargo rustc --locked --lib --crate-type cdylib --profile wasm --target wasm32-unknown-unknown \
+  --no-default-features --features sign --target-dir target/sign
+shasum -a 256 target/sign/wasm32-unknown-unknown/wasm/kzp.wasm
+```
+
+The same toolchain and lockfile give the same bytes whatever the checkout path or target directory. Use a `--target-dir` of its own: the output is also named `kzp.wasm`, and the full build writes the same name under `target/`.
 
 ## Repository
 

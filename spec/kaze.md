@@ -181,7 +181,7 @@ Kaze carries the claim but does not define recourse itself, such as how a claim 
 
 The operator identity that steps 10, 19 and 21 compare against comes from the request's Web Bot Auth signature (`draft-ietf-webbotauth-httpsig-protocol`, built on RFC 9421). A verifier:
 
-1. finds the request's single signature whose `tag` is `web-bot-auth` and takes the agent URL that `Signature-Agent` names for its label. The dictionary form is preferred; the legacy bare-string form is accepted.
+1. finds the request's single signature whose `tag` is the one it expects and takes the agent URL that `Signature-Agent` names for its label. The expected tag is `web-bot-auth` unless the verifier checks another profile of RFC 9421, such as a card network's (`agent-payer-auth`). The dictionary form is preferred; the legacy bare-string form is accepted.
 2. fetches the key directory at `<origin of that URL>/.well-known/http-message-signatures-directory` over HTTPS, without following redirects;
 3. checks:
    - the signature covers `@authority` or `@target-uri`, plus its own `signature-agent` member (`;key="<label>"`);
@@ -194,7 +194,7 @@ The operator is the origin of the agent URL. Components a verifier cannot rebuil
 
 | Check | Code |
 |---|---|
-| Missing or malformed headers; not exactly one `web-bot-auth` signature; `created`, `expires` or `keyid` missing | `agent_header` |
+| Missing or malformed headers; not exactly one signature with the expected `tag`; `created`, `expires` or `keyid` missing | `agent_header` |
 | Required components not covered, or an unsupported component | `agent_components` |
 | Not yet valid, expired, or valid for more than 24 hours | `agent_expired` |
 | `alg` other than `ed25519` | `alg` |
@@ -202,6 +202,16 @@ The operator is the origin of the agent URL. Components a verifier cannot rebuil
 | Signature does not verify | `agent_signature` |
 
 Agent vectors are in `vectors/agent.json`.
+
+**Signing needs no Offer.** The request signature is the whole of this section, and nothing in it refers to an Offer, a mandate or a presentation. An agent signs a request to a platform that never issues Offers exactly as it signs one to a platform that does; only the checks of §7.1 onward need an Offer. A signer chooses:
+
+- the `tag`, which is required and is whatever the verifier looks for;
+- the covered components, in order. At least one of `@authority` and `@target-uri` MUST be covered, so a signature cannot be replayed to another host, and the signer's own `signature-agent` member (`;key="<label>"`) is always covered last. Covering `content-digest` binds the request to its body. The default is `@method`, `@authority` and `@path`;
+- `created`, `expires` and, if the verifier wants one, `nonce`.
+
+`alg` is `ed25519` and `keyid` is the signing key's JWK thumbprint. `Signature-Agent` is written as a dictionary, `<label>="<agent url>"`. The key directory is `{"keys": [JWK, ...]}`, each key carrying the same thumbprint as its `kid`, served as `application/http-message-signatures-directory+json`.
+
+Signing vectors, which a signer must reproduce byte for byte, are in `vectors/sign.json`.
 
 ### 7.1 The mandate
 
